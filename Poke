@@ -72,17 +72,10 @@ task.spawn(function()
 	end
 end)
 
-
---// ============================================
---// GROUP JOIN WARNING
---// ============================================
-
 local GroupWatchEnabled = false
 
 local GROUP_ID = 2757172
 
---// Roles that will trigger a notification.
---// Leave this as {} to notify for EVERYONE in the group.
 local WARN_ROLES = {
 	"Holder",
 	"Founder",
@@ -171,10 +164,6 @@ local function checkGroupPlayer(player, reason)
 	end)
 end
 
-
---// ============================================
---// TOGGLE
---// ============================================
 
 tab:CreateToggle({
 	name = "Staff join Warnings",
