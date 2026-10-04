@@ -1,0 +1,1907 @@
+
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
+local window = UILibrary:CreateWindow({
+	name = "R8//TW0",
+	theme = "R8TW0",
+	skipFakeLoading = false,
+	matrix = true,
+	description = "R8//TW0 UI library demo  ·  v" .. tostring(UILibrary.Version or "6.5"),
+})
+local tab = window:CreateTab({
+	name = "World",
+	icon = 11395780588,
+})
+
+local Drinks = window:CreateTab({
+	name = "Drinks",
+	icon = 398941185,
+})
+
+local Games = window:CreateTab({
+	name = "Games",
+	icon = 112061798075673,
+})
+
+local Fish = window:CreateTab({
+	name = "Fish",
+	icon = 95364946308686,
+})
+
+
+-- Sleeping Beauty Counter (put this in your Home / main tab)
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local function getSleepingBeautyCount()
+	local count = 0
+	local backpack = player:FindFirstChild("Backpack")
+	local char = player.Character
+
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item.Name == "Sleeping Beauty" then
+				count += 1
+			end
+		end
+	end
+
+	-- also count if it's currently equipped
+	if char then
+		local held = char:FindFirstChildOfClass("Tool")
+		if held and held.Name == "Sleeping Beauty" then
+			count += 1
+		end
+	end
+
+	return count
+end
+
+local sleepingStat = tab:CreateStat({
+	name = "Sleeping Beauty",
+	value = getSleepingBeautyCount()
+})
+
+-- live update
+task.spawn(function()
+	while true do
+		sleepingStat:Set(getSleepingBeautyCount())  -- most UIs use :Set()
+		-- If your UI library uses a different method, try:
+		-- sleepingStat.Value = getSleepingBeautyCount()
+		-- or sleepingStat:Update(getSleepingBeautyCount())
+		task.wait(0.25)
+	end
+end)
+
+
+--// ============================================
+--// GROUP JOIN WARNING
+--// ============================================
+
+local GroupWatchEnabled = false
+
+local GROUP_ID = 2757172
+
+--// Roles that will trigger a notification.
+--// Leave this as {} to notify for EVERYONE in the group.
+local WARN_ROLES = {
+	"Holder",
+	"Founder",
+	"Community Manager",
+	"Developer",
+	"Staff",
+	"Recreation",
+	"Ranker",
+	"QA Tester",
+	"Noted Member",
+	--"Gentlemen/women",
+}
+
+local function getGroupRole(player)
+	local success, role = pcall(function()
+		return player:GetRoleInGroupAsync(GROUP_ID)
+	end)
+
+	if not success then
+		warn("[Group Watch] Failed to get role for " .. player.Name)
+		return nil
+	end
+
+	-- Guest means they aren't in the group.
+	if role == "Guest" then
+		return nil
+	end
+
+	return role
+end
+
+local function roleIsWanted(role)
+	-- Empty list = everyone in the group
+	if #WARN_ROLES == 0 then
+		return true
+	end
+
+	for _, wantedRole in ipairs(WARN_ROLES) do
+		if role == wantedRole then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function checkGroupPlayer(player, reason)
+	task.spawn(function()
+		local role = getGroupRole(player)
+
+		if not role then
+			return
+		end
+
+		if not roleIsWanted(role) then
+			return
+		end
+
+		local message
+
+		if reason == "joined" then
+			message = player.DisplayName
+				.. " joined the server!\nRole: "
+				.. role
+		else
+			message = player.DisplayName
+				.. " is already in the server!\nRole: "
+				.. role
+		end
+
+		window:Notify({
+			title = "R8//TW0",
+			text = message,
+			icon = 127357392034684,
+			duration = 4,
+		})
+
+		print(
+			"[Group Watch]",
+			player.Name,
+			"| Role:",
+			role,
+			"|",
+			reason
+		)
+	end)
+end
+
+
+--// ============================================
+--// TOGGLE
+--// ============================================
+
+tab:CreateToggle({
+	name = "Staff join Warnings",
+	value = false,
+
+	callback = function(state)
+		GroupWatchEnabled = state
+
+		if state then
+			window:Notify({
+				title = "R8//TW0",
+				text = "Group join warnings enabled.",
+				icon = 127357392034684,
+				duration = 4,
+			})
+
+			-- Check everyone who is ALREADY in the server.
+			for _, player in ipairs(Players:GetPlayers()) do
+				checkGroupPlayer(player, "already")
+			end
+
+		else
+			window:Notify({
+				title = "R8//TW0",
+				text = "Group join warnings disabled.",
+				icon = 127357392034684,
+				duration = 4,
+			})
+		end
+	end,
+})
+
+
+--// ============================================
+--// WATCH FUTURE JOINS
+--// ============================================
+
+Players.PlayerAdded:Connect(function(player)
+	if not GroupWatchEnabled then
+		return
+	end
+
+	checkGroupPlayer(player, "joined")
+end)
+
+
+tab:CreateToggle({
+    name = "Rapid Tool Equip",
+    value = false,
+    callback = function(state)
+        if state then
+            task.spawn(function()
+                while state do
+                    local character = player.Character
+                    local backpack = player:FindFirstChildOfClass("Backpack")
+
+                    if character and backpack then
+                        for _, tool in ipairs(backpack:GetChildren()) do
+                            if tool:IsA("Tool") then
+                                tool.Parent = character
+                            end
+                        end
+
+                        for _, tool in ipairs(character:GetChildren()) do
+                            if tool:IsA("Tool") then
+                                tool.Parent = backpack
+                            end
+                        end
+                    end
+
+                    task.wait()
+                end
+            end)
+        end
+    end,
+})
+
+tab:CreateButton({
+	name = "Remove barriers",
+	verified = false,
+	callback = function()
+		local function noCollide(inst)
+			if not inst then return end
+			if inst:IsA("BasePart") then
+				inst.CanCollide = false
+			end
+			for _, d in ipairs(inst:GetDescendants()) do
+				if d:IsA("BasePart") then
+					d.CanCollide = false
+				end
+			end
+		end
+
+		local invis = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("InvisWalls")
+		if invis then
+			noCollide(invis)
+		end
+
+		local hitbox = workspace:FindFirstChild("GameAssets")
+			and workspace.GameAssets:FindFirstChild("Activties")
+			and workspace.GameAssets.Activties:FindFirstChild("Arena")
+			and workspace.GameAssets.Activties.Arena:FindFirstChild("A1")
+			and workspace.GameAssets.Activties.Arena.A1:FindFirstChild("Hitbox")
+		if hitbox then
+			noCollide(hitbox)
+		end
+
+		-- any instance named like a barrier (folder or part)
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			local n = string.lower(inst.Name)
+			if n == "barrier" or string.find(n, "barrier", 1, true) then
+				noCollide(inst)
+			end
+		end
+
+		window:Notify({
+			title = "Barriers",
+			text = "Collision disabled on invis walls, arena hitbox, and barriers.",
+			icon = 127357392034684,
+			duration = 4,
+		})
+	end,
+})
+
+----------------------------------------------------------------
+-- WORLD: auto get / mix / place
+----------------------------------------------------------------
+tab:CreateDivider({ text = "Auto drinks" })
+
+getgenv().AutoGetMix = false
+getgenv().AutoPlaceOnly = false
+
+tab:CreateToggle({
+	name = "Auto Get + Mix",
+	value = false,
+	callback = function(state)
+		getgenv().AutoGetMix = state
+		if not state then return end
+
+		task.spawn(function()
+			local Players = game:GetService("Players")
+			local ReplicatedStorage = game:GetService("ReplicatedStorage")
+			local player = Players.LocalPlayer
+			local ToolAction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ToolAction")
+			local SleepingBeautyBottle = workspace:WaitForChild("GameAssets")
+				:WaitForChild("Interactables")
+				:WaitForChild("Bottles")
+				:WaitForChild("Sleeping Beauty")
+
+			local ITEM_NAME = "???"  -- change this if the tool name is different
+
+			local function countItem(char, backpack)
+				local count = 0
+				if backpack then
+					for _, item in ipairs(backpack:GetChildren()) do
+						if item.Name == ITEM_NAME then count += 1 end
+					end
+				end
+				local held = char and char:FindFirstChildOfClass("Tool")
+				if held and held.Name == ITEM_NAME then count += 1 end
+				return count
+			end
+
+			while getgenv().AutoGetMix do
+				local char = player.Character
+				local backpack = player:FindFirstChild("Backpack")
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+				if char and backpack and humanoid then
+					if countItem(char, backpack) < 5 then
+						local drinkArtist = workspace:FindFirstChild("GameAssets")
+							and workspace.GameAssets:FindFirstChild("Interactables")
+							and workspace.GameAssets.Interactables:FindFirstChild("Givers")
+							and workspace.GameAssets.Interactables.Givers:FindFirstChild("DrinkArtist")
+						if drinkArtist then
+							-- Try name-based first (more reliable than children index)
+							local model = drinkArtist:FindFirstChild(ITEM_NAME, true)
+							local clickDetector = model and model:FindFirstChildOfClass("ClickDetector")
+							if not clickDetector then
+								-- fallback: scan children for a matching name
+								for _, child in ipairs(drinkArtist:GetChildren()) do
+									local m = child:FindFirstChild(ITEM_NAME)
+									if m then
+										clickDetector = m:FindFirstChildOfClass("ClickDetector")
+										if clickDetector then break end
+									end
+								end
+							end
+							if clickDetector then
+								pcall(function() fireclickdetector(clickDetector) end)
+							end
+						end
+					end
+
+					local item = backpack:FindFirstChild(ITEM_NAME)
+						or (char:FindFirstChildOfClass("Tool")
+							and char:FindFirstChildOfClass("Tool").Name == ITEM_NAME
+							and char:FindFirstChildOfClass("Tool"))
+
+					if item and item.Parent == backpack then
+						humanoid:EquipTool(item)
+						task.wait(0.05)
+					end
+
+					local held = char:FindFirstChildOfClass("Tool")
+					if held and held.Name == ITEM_NAME then
+						ToolAction:FireServer("Mix", SleepingBeautyBottle, 0)
+					end
+				end
+				task.wait(0.05)
+			end
+		end)
+	end,
+})
+
+tab:CreateToggle({
+	name = "Auto Place Only",
+	value = false,
+	callback = function(state)
+		getgenv().AutoPlaceOnly = state
+		if not state then return end
+
+		task.spawn(function()
+			local Players = game:GetService("Players")
+			local ReplicatedStorage = game:GetService("ReplicatedStorage")
+			local player = Players.LocalPlayer
+			local PlaceTool = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlaceTool")
+
+			local goodRotation = CFrame.new(
+				0, 0, 0,
+				-0.9999921321868896, -0.002560368739068508, 0.003036483423784375,
+				0, 0.7644979357719421, 0.6446262001991272,
+				-0.003971865866333246, 0.6446211338043213, -0.7644919157028198
+			)
+
+			local MAX_DISTANCE = 20
+			local PLACEMENTS_PER_TABLE = 12
+			local index, placeCount = 1, 0
+			local nearbyTables = {}
+
+			local function updateNearbyTables()
+				nearbyTables = {}
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				local map = workspace:FindFirstChild("Map")
+				if not map then return end
+				local seen = {}
+				for _, obj in ipairs(map:GetDescendants()) do
+					if obj.Name == "CanPlaceDrink" then
+						local part = obj:IsA("BasePart") and obj or obj.Parent
+						if part and part:IsA("BasePart") and not seen[part] then
+							if (part.Position - root.Position).Magnitude <= MAX_DISTANCE then
+								seen[part] = true
+								table.insert(nearbyTables, part)
+							end
+						end
+					end
+				end
+			end
+
+			task.spawn(function()
+				while getgenv().AutoPlaceOnly do
+					updateNearbyTables()
+					task.wait(1)
+				end
+			end)
+
+			local function getRandomPositionOnPart(part)
+				local size, cf = part.Size, part.CFrame
+				local offsetX = (math.random() - 0.5) * (size.X * 0.75)
+				local offsetZ = (math.random() - 0.5) * (size.Z * 0.75)
+				local offsetY = size.Y / 2 + 0.08
+				return (cf * CFrame.new(offsetX, offsetY, offsetZ)).Position
+			end
+
+			while getgenv().AutoPlaceOnly do
+				local char = player.Character
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+				local backpack = player:FindFirstChild("Backpack")
+
+				if char and humanoid then
+					local tool = char:FindFirstChild("Sleeping Beauty")
+					if not tool and backpack then
+						local sleeping = backpack:FindFirstChild("Sleeping Beauty")
+						if sleeping then
+							humanoid:EquipTool(sleeping)
+							task.wait(0.06)
+						end
+					end
+					tool = char:FindFirstChild("Sleeping Beauty")
+
+					if tool and #nearbyTables > 0 then
+						if index > #nearbyTables then index = 1 end
+						local target = nearbyTables[index]
+						if target and target.Parent then
+							local placeCF = CFrame.new(getRandomPositionOnPart(target)) * goodRotation
+							PlaceTool:FireServer(placeCF)
+							placeCount += 1
+						end
+						if placeCount >= PLACEMENTS_PER_TABLE then
+							placeCount = 0
+							index += 1
+						end
+					end
+				end
+				task.wait()
+			end
+		end)
+	end,
+})
+
+
+----------------------------------------------------------------
+-- DRINKS TAB
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local ToolAction = Remotes:WaitForChild("ToolAction")
+local Bottles = workspace:WaitForChild("GameAssets"):WaitForChild("Interactables"):WaitForChild("Bottles")
+local Cosmetics = workspace:WaitForChild("GameAssets"):WaitForChild("Interactables"):WaitForChild("CupCosmetics")
+local DrinkArtist = workspace:WaitForChild("GameAssets"):WaitForChild("Interactables"):WaitForChild("Givers"):WaitForChild("DrinkArtist")
+
+-- glass: single choice
+local SelectedGlass = "Cup"
+-- cosmetics: multi
+local SelectedCosmetics = {}
+
+Drinks:CreateDivider({ text = "Glass" })
+Drinks:CreateDropdown({
+	name = "Glass type",
+	multiSelect = false,
+	options = { "Cup", "ShotGlass", "WineGlass", "Mug", "Margarita", "???" },
+	value = "Cup",
+	callback = function(choice)
+		if choice then SelectedGlass = choice end
+	end,
+})
+
+Drinks:CreateDivider({ text = "Cosmetics" })
+Drinks:CreateDropdown({
+	name = "Cosmetics",
+	multiSelect = true,
+	options = {
+		"Ice", "Lime", "Orange", "Lemon",
+		"Umbrella", "GreenOlive", "Cherry", "SugarCane",
+	},
+	value = {},
+	callback = function(selected)
+		SelectedCosmetics = selected or {}
+	end,
+})
+
+local function getGlassToolName()
+	if SelectedGlass == "WineGlass" then
+		return "WhineGlass" -- game spelling
+	end
+	return SelectedGlass
+end
+
+local function findClickDetector(root, targetName)
+	if not root then return nil end
+
+	-- direct child
+	local model = root:FindFirstChild(targetName)
+	if model then
+		local cd = model:FindFirstChildOfClass("ClickDetector")
+		if cd then return cd end
+	end
+
+	-- deep search
+	for _, desc in ipairs(root:GetDescendants()) do
+		if desc.Name == targetName then
+			local cd = desc:FindFirstChildOfClass("ClickDetector")
+			if cd then return cd end
+			if desc.Parent then
+				cd = desc.Parent:FindFirstChildOfClass("ClickDetector")
+				if cd then return cd end
+			end
+		end
+	end
+	return nil
+end
+
+local function getSelectedGlassClick()
+	local toolName = getGlassToolName()
+	local cd = findClickDetector(DrinkArtist, toolName)
+
+	-- fallbacks for the ones that sometimes sit under numbered children
+	if not cd then
+		if SelectedGlass == "Cup" then
+			cd = findClickDetector(DrinkArtist:FindFirstChild("Cup"), "Cup")
+		elseif SelectedGlass == "ShotGlass" then
+			local obj = DrinkArtist:GetChildren()[40]
+			cd = obj and findClickDetector(obj, "ShotGlass")
+		elseif SelectedGlass == "WineGlass" then
+			local obj = DrinkArtist:GetChildren()[34]
+			cd = obj and findClickDetector(obj, "WhineGlass")
+		elseif SelectedGlass == "Mug" then
+			local obj = DrinkArtist:GetChildren()[35]
+			cd = obj and findClickDetector(obj, "Mug")
+		elseif SelectedGlass == "Margarita" then
+			local obj = DrinkArtist:GetChildren()[32]
+			cd = obj and findClickDetector(obj, "Margarita")
+		end
+	end
+
+	if cd then
+		pcall(function() fireclickdetector(cd) end)
+		return true
+	end
+	return false
+end
+
+local function equipGlass()
+	local toolName = getGlassToolName()
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	local backpack = player:FindFirstChild("Backpack")
+	if not (char and humanoid and backpack) then return false end
+
+	if char:FindFirstChild(toolName) then return true end
+
+	local tool = backpack:FindFirstChild(toolName)
+	if tool then
+		humanoid:EquipTool(tool)
+		task.wait(0.12)
+		return char:FindFirstChild(toolName) ~= nil
+	end
+	return false
+end
+
+local function ensureGlass()
+	if equipGlass() then return true end
+
+	-- not in backpack → grab it
+	if getSelectedGlassClick() then
+		task.wait(0.3) -- wait for server to give the tool
+		return equipGlass()
+	end
+	return false
+end
+
+local function mix(...)
+	for _, bottleName in ipairs({...}) do
+		local bottle = Bottles:FindFirstChild(bottleName)
+		if bottle then
+			ToolAction:FireServer("Mix", bottle, 0)
+		else
+			warn("Bottle not found:", bottleName)
+		end
+	end
+end
+
+local function addEnabledCosmetics()
+	for _, name in ipairs(SelectedCosmetics) do
+		local cos = Cosmetics:FindFirstChild(name)
+		if cos then
+			ToolAction:FireServer("AddCosmetic", cos)
+		end
+	end
+end
+
+local function makeDrink(...)
+	if not ensureGlass() then
+		window:Notify({ title = "Drinks", text = "Could not grab/equip glass (" .. tostring(SelectedGlass) .. ")", icon = 127357392034684, duration = 3 })
+		return false
+	end
+	task.wait(0.08)
+	mix(...)
+	task.wait(0.06)
+	addEnabledCosmetics()
+	return true
+end
+Drinks:CreateDivider({ text = "Cups" })
+local cupRecipes = {
+	{ "Bloody Mary", { "Cranberry Juice", "Vodeka" } },
+	{ "Blue Lagoon", { "Lime Juice", "Cruecaos", "Vodeka" } },
+	{ "British Beefeater Gin And Tonic", { "Lemon Juice", "Orange Juice", "British Beefeater" } },
+	{ "California Surfer", { "Jaegermaster", "Malebu", "Pineapple Juice" } },
+	{ "Choco Old Fashioned", { "Baelys", "Milk" } },
+	{ "Colorado Bulldog", { "Khlua", "Vodeka", "Cola", "Milk" } },
+	{ "Cranberry Beton", { "Becheroveka", "Cranberry Juice" } },
+	{ "French 75", { "Tennessy", "Lemon Juice", "Sortaleige" } },
+	{ "Irish Lemonade", { "Jamesun", "Lemon Juice" } },
+	{ "Jack and Coke", { "Jack D4ny's", "Cola" } },
+	{ "Jack and Jingle", { "Jack D4ny's", "Lemon Juice", "Cranberry Juice" } },
+	{ "Jager Bomb", { "Jaegermaster", "Red Gull" } },
+	{ "Longpolitan", { "Cointrue", "Lime Juice" } },
+	{ "Mafia Mojito", { "Lemon Cream", "Lime Juice" } },
+	{ "Malebu Mojito", { "Malebu", "Lime Juice" } },
+	{ "Malebu Sunrise", { "Malebu", "Orange Juice", "Pineapple Juice" } },
+	{ "Manhattan", { "Tennessy", "Martel", "Orange Juice" } },
+	{ "Mojito", { "Hervana Club", "Lemon Juice" } },
+	{ "Naigroni", { "Tennessy", "Jaegermaster", "Orange Juice" } },
+	{ "Old Fashioned", { "Chavas Regal", "Orange Juice" } },
+	{ "Penicillin", { "Chavas Regal", "Lemon Juice" } },
+	{ "Pina Colada", { "Hervana Club", "Pineapple Juice", "Milk" } },
+	{ "Swift Sour", { "Martel", "Lemon Juice" } },
+	{ "Tequila Sunrise", { "Olmega", "Lime Juice", "Orange Juice" } },
+	{ "Whiskey Smash", { "Jamesun", "Lime Juice" } },
+	{ "White Russian", { "Vodeka", "Khlua", "Milk" } },
+	{ "X on the Beach", { "Vodeka", "Cranberry Juice", "Orange Juice" } },
+}
+for _, recipe in ipairs(cupRecipes) do
+	local name, ingredients = recipe[1], recipe[2]
+	Drinks:CreateButton({
+		name = name,
+		buttonText = "Make",
+		callback = function()
+			makeDrink(table.unpack(ingredients))
+		end,
+	})
+end
+
+Drinks:CreateDivider({ text = "Margarita" })
+local margRecipes = {
+	{ "Jelly Martini", { "Curecaos", "Sortaleige", "Lemon Cream", "Vodeka" } },
+	{ "Cosmopolitan", { "Vodeka", "Cointrue", "Cranberry Juice", "Lime Juice" } },
+	{ "French Martini", { "Vodeka", "Ramazotte Armono", "Pineapple Juice" } },
+	{ "Luxury Rita", { "Don Foolio", "Lime Juice", "Pineapple Juice" } },
+	{ "Vodeka Martini", { "Vodeka", "British Beefeater", "Lemon Juice" } },
+	{ "Last Word", { "British Beefeater", "Becheroveka", "Lime Juice" } },
+	{ "Massey Martini", { "Jamesun", "British Beefeater", "Orange Juice" } },
+	{ "Espresso Martini", { "Vodeka", "Khlua", "Lemon Cream" } },
+	{ "Choccy Martini", { "Vodeka", "Lemon Cream", "Chocolate Milk" } },
+	{ "Lemon-Drop", { "Vodeka", "Lemon Cream", "Lemon Juice", "Grenadine" } },
+}
+for _, recipe in ipairs(margRecipes) do
+	local name, ingredients = recipe[1], recipe[2]
+	Drinks:CreateButton({
+		name = name,
+		buttonText = "Make",
+		callback = function()
+			makeDrink(table.unpack(ingredients))
+		end,
+	})
+end
+
+Games:CreateDivider({ text = "Piano" })
+Games:CreateText({
+	name = "Read this first",
+	text = "Paste VP sheet into PianoUI SheetBox. Each group = one beat; newlines are not pauses. Start again to stop.",
+})
+
+local PianoState = {
+	playing = false,
+	token = 0,
+	speed = 50, -- 1–100, 50 = normal
+}
+
+local function getSheetBox()
+	local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+	local ui = pg and pg:FindFirstChild("PianoUI")
+	local frame = ui and ui:FindFirstChild("SheetsFrame")
+	local scroll = frame and frame:FindFirstChild("ScrollingFrame")
+	return scroll and scroll:FindFirstChild("SheetBox")
+end
+
+local CHAR_TO_KEY = {
+	["1"]=Enum.KeyCode.One,["2"]=Enum.KeyCode.Two,["3"]=Enum.KeyCode.Three,
+	["4"]=Enum.KeyCode.Four,["5"]=Enum.KeyCode.Five,["6"]=Enum.KeyCode.Six,
+	["7"]=Enum.KeyCode.Seven,["8"]=Enum.KeyCode.Eight,["9"]=Enum.KeyCode.Nine,
+	["0"]=Enum.KeyCode.Zero,
+	["q"]=Enum.KeyCode.Q,["w"]=Enum.KeyCode.W,["e"]=Enum.KeyCode.E,["r"]=Enum.KeyCode.R,
+	["t"]=Enum.KeyCode.T,["y"]=Enum.KeyCode.Y,["u"]=Enum.KeyCode.U,["i"]=Enum.KeyCode.I,
+	["o"]=Enum.KeyCode.O,["p"]=Enum.KeyCode.P,
+	["a"]=Enum.KeyCode.A,["s"]=Enum.KeyCode.S,["d"]=Enum.KeyCode.D,["f"]=Enum.KeyCode.F,
+	["g"]=Enum.KeyCode.G,["h"]=Enum.KeyCode.H,["j"]=Enum.KeyCode.J,["k"]=Enum.KeyCode.K,
+	["l"]=Enum.KeyCode.L,["z"]=Enum.KeyCode.Z,["x"]=Enum.KeyCode.X,["c"]=Enum.KeyCode.C,
+	["v"]=Enum.KeyCode.V,["b"]=Enum.KeyCode.B,["n"]=Enum.KeyCode.N,["m"]=Enum.KeyCode.M,
+	-- shifted / black-key labels
+	["!"]=Enum.KeyCode.One,["@"]=Enum.KeyCode.Two,["#"]=Enum.KeyCode.Three,
+	["$"]=Enum.KeyCode.Four,["%"]=Enum.KeyCode.Five,["^"]=Enum.KeyCode.Six,
+	["&"]=Enum.KeyCode.Seven,["*"]=Enum.KeyCode.Eight,["("]=Enum.KeyCode.Nine,
+	[")"]=Enum.KeyCode.Zero,
+	["Q"]=Enum.KeyCode.Q,["W"]=Enum.KeyCode.W,["E"]=Enum.KeyCode.E,["R"]=Enum.KeyCode.R,
+	["T"]=Enum.KeyCode.T,["Y"]=Enum.KeyCode.Y,["U"]=Enum.KeyCode.U,["I"]=Enum.KeyCode.I,
+	["O"]=Enum.KeyCode.O,["P"]=Enum.KeyCode.P,
+	["A"]=Enum.KeyCode.A,["S"]=Enum.KeyCode.S,["D"]=Enum.KeyCode.D,["F"]=Enum.KeyCode.F,
+	["G"]=Enum.KeyCode.G,["H"]=Enum.KeyCode.H,["J"]=Enum.KeyCode.J,["K"]=Enum.KeyCode.K,
+	["L"]=Enum.KeyCode.L,["Z"]=Enum.KeyCode.Z,["X"]=Enum.KeyCode.X,["C"]=Enum.KeyCode.C,
+	["V"]=Enum.KeyCode.V,["B"]=Enum.KeyCode.B,["N"]=Enum.KeyCode.N,["M"]=Enum.KeyCode.M,
+}
+
+local SHIFT_CHARS = {
+	["!"]=true,["@"]=true,["#"]=true,["$"]=true,["%"]=true,["^"]=true,
+	["&"]=true,["*"]=true,["("]=true,[")"]=true,
+	["Q"]=true,["W"]=true,["E"]=true,["R"]=true,["T"]=true,["Y"]=true,
+	["U"]=true,["I"]=true,["O"]=true,["P"]=true,
+	["A"]=true,["S"]=true,["D"]=true,["F"]=true,["G"]=true,["H"]=true,
+	["J"]=true,["K"]=true,["L"]=true,["Z"]=true,["X"]=true,["C"]=true,
+	["V"]=true,["B"]=true,["N"]=true,["M"]=true,
+}
+
+local vim = game:GetService("VirtualInputManager")
+local function keyDown(code) vim:SendKeyEvent(true, code, false, game) end
+local function keyUp(code) vim:SendKeyEvent(false, code, false, game) end
+
+local function extractChars(token)
+	-- strip [ ] if present; keep only playable keys
+	token = token:gsub("^%[", ""):gsub("%]$", "")
+	local chars = {}
+	for i = 1, #token do
+		local ch = token:sub(i, i)
+		if CHAR_TO_KEY[ch] then
+			table.insert(chars, ch)
+		end
+	end
+	return chars
+end
+
+local function pressChars(chars)
+	if not chars or #chars == 0 then return end
+	local needShift = false
+	for _, ch in ipairs(chars) do
+		if SHIFT_CHARS[ch] then needShift = true break end
+	end
+	if needShift then keyDown(Enum.KeyCode.LeftShift) end
+	for _, ch in ipairs(chars) do
+		local code = CHAR_TO_KEY[ch]
+		if code then keyDown(code) end
+	end
+	-- hold scales slightly with chord size
+	task.wait(0.045 + math.min(#chars, 6) * 0.008)
+	for _, ch in ipairs(chars) do
+		local code = CHAR_TO_KEY[ch]
+		if code then keyUp(code) end
+	end
+	if needShift then keyUp(Enum.KeyCode.LeftShift) end
+end
+
+-- VP sheets: whitespace (space OR newline) only separates beats — same timing
+local function parseSheet(text)
+	local events = {}
+	if type(text) ~= "string" then return events end
+	for raw in text:gmatch("%S+") do
+		-- pure dash token = explicit rest (rare)
+		if raw:match("^[%-–—]+$") then
+			table.insert(events, { type = "rest", units = #raw })
+		else
+			local chars = extractChars(raw)
+			if #chars > 0 then
+				table.insert(events, { type = "notes", chars = chars })
+			end
+		end
+	end
+	return events
+end
+
+local function beat()
+	local s = math.clamp(tonumber(PianoState.speed) or 50, 1, 100)
+	-- 50 → ~0.13s per token; higher speed = shorter beat
+	return 0.13 * (50 / s)
+end
+
+local PianoProgress = Games:CreateProgress({
+	name = "Piano song %",
+	range = { 0, 100 },
+	value = 0,
+})
+PianoProgress:Set(0)
+
+Games:CreateSlider({
+	name = "Piano speed",
+	range = { 1, 100 },
+	increment = 1,
+	value = 50,
+	suffix = "",
+	callback = function(value)
+		PianoState.speed = value
+	end,
+})
+
+Games:CreateButton({
+	name = "Start Piano song",
+	callback = function()
+		if PianoState.playing then
+			PianoState.playing = false
+			PianoState.token += 1
+			PianoProgress:Set(0)
+			window:Notify({ title = "Piano", text = "Stopped.", icon = 127357392034684, duration = 2 })
+			return
+		end
+
+		local box = getSheetBox()
+		if not box or box.Text == "" then
+			window:Notify({ title = "Piano", text = "Sheet box empty.", icon = 127357392034684, duration = 3 })
+			return
+		end
+
+		local events = parseSheet(box.Text)
+		local total = 0
+		for _, e in ipairs(events) do
+			if e.type == "notes" then total += 1 end
+		end
+		if total == 0 then
+			window:Notify({ title = "Piano", text = "No playable notes found.", icon = 127357392034684, duration = 3 })
+			return
+		end
+
+		PianoState.playing = true
+		PianoState.token += 1
+		local myToken = PianoState.token
+		local done = 0
+		PianoProgress:Set(0)
+
+		window:Notify({
+			title = "Piano",
+			text = "Playing (" .. total .. " beats)…",
+			icon = 127357392034684,
+			duration = 2,
+		})
+
+		task.spawn(function()
+			local b = beat()
+			for _, e in ipairs(events) do
+				if not PianoState.playing or PianoState.token ~= myToken then return end
+				-- refresh beat each note so slider works live
+				b = beat()
+				if e.type == "notes" then
+					pressChars(e.chars)
+					done += 1
+					PianoProgress:Set(math.floor(done / total * 100))
+					task.wait(b)
+				elseif e.type == "rest" then
+					task.wait(b * (e.units or 1))
+				end
+			end
+			if PianoState.token == myToken then
+				PianoState.playing = false
+				PianoProgress:Set(100)
+				window:Notify({ title = "Piano", text = "Song finished.", icon = 127357392034684, duration = 2 })
+			end
+		end)
+	end,
+})
+
+----------------------------------------------------------------
+-- GAMES: Music Room autoplay
+----------------------------------------------------------------
+Games:CreateDivider({ text = "Music Room" })
+Games:CreateText({
+	name = "Music Room info",
+	text = "Start while HUD is open. Holds release when Tail hits the line so notes right after still register.",
+})
+
+local MusicState = {
+	playing = false,
+	token = 0,
+	fakeIt = false,
+}
+
+local COLOR_TOL = 12
+
+local function colorClose(c, r, g, b)
+	if not c then return false end
+	return math.abs(c.R * 255 - r) <= COLOR_TOL
+		and math.abs(c.G * 255 - g) <= COLOR_TOL
+		and math.abs(c.B * 255 - b) <= COLOR_TOL
+end
+
+local function getHud()
+	local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+	local gui = pg and pg:FindFirstChild("MusicRoomGui")
+	return gui and gui:FindFirstChild("Hud")
+end
+
+local function getHighway()
+	local hud = getHud()
+	return hud and hud:FindFirstChild("Highway")
+end
+
+local function isGuitarMode(highway)
+	local receptorR = highway:FindFirstChild("ReceptorR")
+	local label = receptorR and receptorR:FindFirstChild("KeyLabel")
+	if label and label:IsA("TextLabel") then
+		local t = string.upper(string.gsub(label.Text or "", "%s+", ""))
+		if t == "J" then return true end
+		if t == "D" or t == "K" then return false end
+	end
+	return highway:FindFirstChild("ReceptorC1") == nil
+end
+
+local function noteColor(inst)
+	if not inst then return nil end
+	if inst:IsA("ImageLabel") then return inst.ImageColor3 end
+	if inst:IsA("GuiObject") then return inst.BackgroundColor3 end
+	return nil
+end
+
+local function keyForNoteColor(color, guitar)
+	if not color then return nil end
+	if guitar then
+		if colorClose(color, 85, 238, 254) then return Enum.KeyCode.F end
+		if colorClose(color, 243, 17, 186) then return Enum.KeyCode.J end
+	else
+		if colorClose(color, 243, 17, 186) then return Enum.KeyCode.F end
+		if colorClose(color, 251, 191, 36) then return Enum.KeyCode.J end
+		if colorClose(color, 85, 238, 254) then return Enum.KeyCode.D end
+		if colorClose(color, 139, 92, 246) then return Enum.KeyCode.K end
+	end
+	return nil
+end
+
+local function parseTimeLabel(text)
+	if type(text) ~= "string" then return nil, nil end
+	local a, b, c, d = text:match("(%d+):(%d+)%s*/%s*(%d+):(%d+)")
+	if not a then return nil, nil end
+	return tonumber(a) * 60 + tonumber(b), tonumber(c) * 60 + tonumber(d)
+end
+
+local vim = game:GetService("VirtualInputManager")
+local function keyDown(code)
+	if code then vim:SendKeyEvent(true, code, false, game) end
+end
+local function keyUp(code)
+	if code then vim:SendKeyEvent(false, code, false, game) end
+end
+
+-- activeHolds[note] = KeyCode
+-- heldKeys[KeyCode] = note  (so we can free a key for the next note)
+local activeHolds = {}
+local heldKeys = {}
+local recentTaps = {}
+
+local function releaseHold(note)
+	local code = activeHolds[note]
+	if not code then return end
+	keyUp(code)
+	activeHolds[note] = nil
+	if heldKeys[code] == note then
+		heldKeys[code] = nil
+	end
+end
+
+local function releaseAllHolds()
+	for note in pairs(activeHolds) do
+		releaseHold(note)
+	end
+	activeHolds = {}
+	heldKeys = {}
+end
+
+-- free this key if something else is holding it (next note right behind tail)
+local function ensureKeyFree(code)
+	local owner = heldKeys[code]
+	if owner then
+		releaseHold(owner)
+	end
+end
+
+local function startHold(note, code)
+	ensureKeyFree(code)
+	keyDown(code)
+	activeHolds[note] = code
+	heldKeys[code] = note
+end
+
+local function tapKey(code)
+	if not code then return end
+	ensureKeyFree(code) -- don't miss a tap stuck behind a hold
+	keyDown(code)
+	task.delay(0.035, function()
+		-- only release if a hold didn't take this key over
+		if not heldKeys[code] then
+			keyUp(code)
+		end
+	end)
+end
+
+local MusicProgress = Games:CreateProgress({
+	name = "Song progress",
+	range = { 0, 100 },
+	value = 0,
+})
+MusicProgress:Set(0)
+
+Games:CreateToggle({
+	name = "Fake it",
+	value = false,
+	callback = function(v)
+		MusicState.fakeIt = v and true or false
+	end,
+})
+
+Games:CreateButton({
+	name = "Start Music Room",
+	buttonText = "Start / Stop",
+	callback = function()
+		if MusicState.playing then
+			MusicState.playing = false
+			MusicState.token += 1
+			releaseAllHolds()
+			MusicProgress:Set(0)
+			window:Notify({ title = "Music Room", text = "Stopped.", icon = 127357392034684, duration = 2 })
+			return
+		end
+
+		local highway = getHighway()
+		if not highway then
+			window:Notify({
+				title = "Music Room",
+				text = "MusicRoomGui not open.",
+				icon = 127357392034684,
+				duration = 3,
+			})
+			return
+		end
+
+		MusicState.playing = true
+		MusicState.token += 1
+		local myToken = MusicState.token
+		recentTaps = {}
+		releaseAllHolds()
+
+		local guitar = isGuitarMode(highway)
+		window:Notify({
+			title = "Music Room",
+			text = (guitar and "Guitar (F/J)" or "Drums (D/F/J/K)")
+				.. (MusicState.fakeIt and " · Fake it ON" or ""),
+			icon = 127357392034684,
+			duration = 2,
+		})
+
+		task.spawn(function()
+			local BASE_PAD = 18
+			-- release hold slightly before tail center fully passes (helps stacked notes)
+			local RELEASE_EARLY = 6
+
+			while MusicState.playing and MusicState.token == myToken do
+				highway = getHighway()
+				if not highway then
+					task.wait(0.1)
+				else
+					guitar = isGuitarMode(highway)
+					local hitLine = highway:FindFirstChild("HitLine")
+					local noteLayer = highway:FindFirstChild("NoteLayer")
+					local hitY = hitLine and (hitLine.AbsolutePosition.Y + hitLine.AbsoluteSize.Y * 0.5)
+
+					if noteLayer and hitY then
+						local pad = BASE_PAD
+						if MusicState.fakeIt then
+							pad = BASE_PAD + math.random(-6, 10)
+						end
+
+						for _, note in ipairs(noteLayer:GetChildren()) do
+							if note:IsA("GuiObject") and note.Visible then
+								local isHold = note.Name == "NoteHold" or note:FindFirstChild("Head") ~= nil
+
+								if isHold then
+									local head = note:FindFirstChild("Head")
+									local tail = note:FindFirstChild("Tail")
+									local col = noteColor(head) or noteColor(note) or noteColor(tail)
+									local key = keyForNoteColor(col, guitar)
+
+									if key then
+										local headY = head and (head.AbsolutePosition.Y + head.AbsoluteSize.Y * 0.5)
+										local tailY = tail and (tail.AbsolutePosition.Y + tail.AbsoluteSize.Y * 0.5)
+										local headNear = headY and math.abs(headY - hitY) <= pad
+
+										-- release as soon as Tail reaches / passes hit line (not when destroyed)
+										local tailPast = false
+										if tailY then
+											-- notes move toward hit line; once tail center is at line, end hold
+											tailPast = math.abs(tailY - hitY) <= RELEASE_EARLY
+												or (hitY and tailY > hitY + RELEASE_EARLY)
+										end
+
+										if activeHolds[note] then
+											if not note.Parent or not note.Visible or tailPast or (tail and not tail.Parent) then
+												releaseHold(note)
+											end
+										elseif headNear and not activeHolds[note] then
+											if MusicState.fakeIt and math.random() < 0.06 then
+												-- soft miss hold start
+											else
+												local delay = MusicState.fakeIt and (math.random() * 0.03) or 0
+												local n, k = note, key
+												task.delay(delay, function()
+													if not MusicState.playing or MusicState.token ~= myToken then return end
+													if n.Parent and not activeHolds[n] then
+														startHold(n, k)
+													end
+												end)
+											end
+										end
+									end
+								else
+									-- NoteTap
+									local noteY = note.AbsolutePosition.Y + note.AbsoluteSize.Y * 0.5
+									if math.abs(noteY - hitY) <= pad then
+										local id = tostring(note:GetDebugId())
+										local now = os.clock()
+										if not recentTaps[id] or (now - recentTaps[id]) > 0.12 then
+											local key = keyForNoteColor(noteColor(note), guitar)
+											if key then
+												if MusicState.fakeIt and math.random() < 0.05 then
+													recentTaps[id] = now
+												else
+													local delay = MusicState.fakeIt and (math.random() * 0.04) or 0
+													task.delay(delay, function()
+														if MusicState.playing and MusicState.token == myToken then
+															tapKey(key)
+														end
+													end)
+													recentTaps[id] = now
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+
+						-- orphan cleanup
+						for n in pairs(activeHolds) do
+							if not n.Parent or not n.Visible then
+								releaseHold(n)
+							end
+						end
+					end
+
+					local gui = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("MusicRoomGui")
+					local timeLabel = gui
+						and gui:FindFirstChild("Band")
+						and gui.Band:FindFirstChild("Panel")
+						and gui.Band.Panel:FindFirstChild("TimeLabel")
+					if timeLabel and timeLabel:IsA("TextLabel") then
+						local cur, tot = parseTimeLabel(timeLabel.Text)
+						if cur and tot and tot > 0 then
+							MusicProgress:Set(math.clamp(math.floor(cur / tot * 100), 0, 100))
+						end
+					end
+				end
+				task.wait(0.01)
+			end
+
+			releaseAllHolds()
+		end)
+	end,
+})
+
+----------------------------------------------------------------
+-- GAMES: Pool
+----------------------------------------------------------------
+Games:CreateDivider({ text = "Pool" })
+Games:CreateText({
+	name = "Pool info",
+	text = "Enhance stretches aim lines (not the cue-ball segment) toward pockets. Rainbow is separate and skips red (255,50,50).",
+})
+
+local PoolState = {
+	enhance = false,
+	rainbow = false,
+	token = 0,
+	clones = {},          -- [original] = clone
+	origSize = {},
+}
+
+local RED_SKIP = Color3.fromRGB(255, 50, 50)
+
+local function isSkipRed(c)
+	if not c then return false end
+	return math.abs(c.R * 255 - 255) < 8
+		and math.abs(c.G * 255 - 50) < 8
+		and math.abs(c.B * 255 - 50) < 8
+end
+
+local function getPoolTablesFolder()
+	local ga = workspace:FindFirstChild("GameAssets")
+	return ga and ga:FindFirstChild("PoolTables")
+end
+
+local function getCueBalls()
+	local list = {}
+	local folder = getPoolTablesFolder()
+	if not folder then return list end
+	for _, tbl in ipairs(folder:GetChildren()) do
+		local balls = tbl:FindFirstChild("Balls")
+		local cue = balls and balls:FindFirstChild("CueBall")
+		if cue and cue:IsA("BasePart") then
+			table.insert(list, cue)
+		end
+	end
+	return list
+end
+
+local function farthestPocketDistance(fromPos)
+	local best = 0
+	local folder = getPoolTablesFolder()
+	if not folder then return 40 end
+	for _, tbl in ipairs(folder:GetChildren()) do
+		local pt = tbl:FindFirstChild("Pool Table") or tbl:FindFirstChild("PoolTable")
+		local pockets = pt and pt:FindFirstChild("Pockets")
+		if pockets then
+			for _, p in ipairs(pockets:GetDescendants()) do
+				if p:IsA("BasePart") then
+					local d = (p.Position - fromPos).Magnitude
+					if d > best then best = d end
+				end
+			end
+		end
+	end
+	return best > 0 and best or 40
+end
+
+local function segmentTouchesCue(seg, cueBalls)
+	if not seg:IsA("BasePart") then return false end
+	for _, cue in ipairs(cueBalls) do
+		local dist = (seg.Position - cue.Position).Magnitude
+		local reach = (seg.Size.Magnitude * 0.5) + (cue.Size.Magnitude * 0.5) + 0.35
+		if dist <= reach then return true end
+		local ok, touching = pcall(function() return seg:GetTouchingParts() end)
+		if ok and touching then
+			for _, t in ipairs(touching) do
+				if t == cue then return true end
+			end
+		end
+	end
+	return false
+end
+
+-- lengthen part along its longest axis
+-- keeps the original BACK end fixed and only extends FORWARD
+local function lengthenSegment(seg, targetLen)
+	if not seg:IsA("BasePart") then return end
+
+	if not PoolState.origSize[seg] then
+		PoolState.origSize[seg] = seg.Size
+	end
+
+	local s = PoolState.origSize[seg]
+
+	local ax = "X"
+	local len = s.X
+	if s.Y >= len then ax, len = "Y", s.Y end
+	if s.Z >= len then ax, len = "Z", s.Z end
+
+	local newLen = math.max(len, targetLen)
+
+	-- Always make it Plastic.
+	seg.Material = Enum.Material.Plastic
+
+	-- Never shrink the original segment.
+	if newLen <= len then
+		return
+	end
+
+	local added = newLen - len
+	local cf = seg.CFrame
+
+	if ax == "X" then
+		seg.Size = Vector3.new(newLen, s.Y, s.Z)
+		seg.CFrame = cf + cf.RightVector * (added / 2)
+
+	elseif ax == "Y" then
+		seg.Size = Vector3.new(s.X, newLen, s.Z)
+		seg.CFrame = cf + cf.UpVector * (added / 2)
+
+	else
+		seg.Size = Vector3.new(s.X, s.Y, newLen)
+		seg.CFrame = cf + cf.LookVector * (added / 2)
+	end
+end
+
+local function clearClones()
+	for orig, clone in pairs(PoolState.clones) do
+		if clone and clone.Parent then
+			pcall(function() clone:Destroy() end)
+		end
+		-- restore visibility of original
+		if orig and orig.Parent then
+			pcall(function()
+				if orig:IsA("BasePart") then
+					orig.Transparency = 0
+					orig.CanCollide = false
+				elseif orig:IsA("Beam") then
+					orig.Enabled = true
+				end
+			end)
+		end
+	end
+	PoolState.clones = {}
+	PoolState.origSize = {}
+end
+
+local function setPartColor(inst, color)
+	if not inst then return end
+	if inst:IsA("BasePart") then
+		if isSkipRed(inst.Color) then return end
+		inst.Color = color
+	elseif inst:IsA("Beam") then
+		if inst.Color and inst.Color.Keypoints then
+			local k = inst.Color.Keypoints[1]
+			if k and isSkipRed(k.Value) then return end
+		end
+		inst.Color = ColorSequence.new(color)
+	end
+end
+
+local function applyRainbowColor(color)
+	-- also color the contact points
+	local targets = {
+		workspace:FindFirstChild("ContactPoint"),
+		workspace:FindFirstChild("ContactPointX"),
+	}
+	for _, t in ipairs(targets) do
+		setPartColor(t, color)
+		if t then
+			for _, d in ipairs(t:GetDescendants()) do
+				setPartColor(d, color)
+			end
+		end
+	end
+
+	-- color our clones
+	for _, clone in pairs(PoolState.clones) do
+		if clone and clone.Parent then
+			setPartColor(clone, color)
+			for _, d in ipairs(clone:GetDescendants()) do
+				setPartColor(d, color)
+			end
+		end
+	end
+end
+
+-- Main loop that keeps clones alive & updated
+local function startPoolLoop()
+	PoolState.token += 1
+	local my = PoolState.token
+
+	task.spawn(function()
+		while (PoolState.enhance or PoolState.rainbow) and PoolState.token == my do
+			local lines = workspace:FindFirstChild("TrajectoryLines")
+			local cueBalls = getCueBalls()
+
+			if lines then
+				-- collect current real segments
+				local live = {}
+				for _, seg in ipairs(lines:GetDescendants()) do
+					if seg:IsA("BasePart") and (seg.Name == "TrajectorySegment" or seg.Parent == lines) then
+						live[seg] = true
+					end
+				end
+
+				-- remove dead clones
+				for orig, clone in pairs(PoolState.clones) do
+					if not live[orig] or not orig.Parent then
+						if clone and clone.Parent then
+							pcall(function() clone:Destroy() end)
+						end
+						PoolState.clones[orig] = nil
+						PoolState.origSize[orig] = nil
+					end
+				end
+
+				-- create / update clones
+				for seg in pairs(live) do
+					local clone = PoolState.clones[seg]
+
+					if not clone or not clone.Parent then
+						-- make a fresh clone
+						clone = seg:Clone()
+						clone.Name = "EnhancedTrajectory_" .. tostring(seg)
+						clone.Anchored = true
+						clone.CanCollide = false
+						clone.CanQuery = false
+						clone.CanTouch = false
+						clone.Parent = workspace   -- or a dedicated folder if you prefer
+
+						-- hide original
+						seg.Transparency = 1
+						if seg:IsA("BasePart") then
+							seg.CanCollide = false
+						end
+
+						PoolState.clones[seg] = clone
+						PoolState.origSize[clone] = seg.Size   -- store original size on the clone
+					end
+
+					-- keep clone matched to original transform
+					clone.CFrame = seg.CFrame
+					clone.Transparency = 0.5
+
+					-- enhance length (only non-cue segments)
+					if PoolState.enhance and #cueBalls > 0 then
+						if not segmentTouchesCue(seg, cueBalls) then
+							local target = farthestPocketDistance(seg.Position)
+							lengthenSegment(clone, target * 0.95)
+						else
+							-- keep original size for the cue-ball segment
+							if PoolState.origSize[clone] then
+								clone.Size = PoolState.origSize[clone]
+							end
+						end
+					else
+						-- just mirror size when enhance is off
+						clone.Size = seg.Size
+					end
+				end
+			end
+
+			task.wait(0.03) -- 30+ FPS is plenty and still light
+		end
+
+		-- cleanup when both toggles are off
+		if not PoolState.enhance and not PoolState.rainbow then
+			clearClones()
+		end
+	end)
+end
+
+Games:CreateToggle({
+	name = "Enhance trajectories",
+	value = false,
+	callback = function(state)
+		PoolState.enhance = state
+		if state or PoolState.rainbow then
+			startPoolLoop()
+		else
+			clearClones()
+		end
+	end,
+})
+
+Games:CreateToggle({
+	name = "Rainbow aim",
+	value = false,
+	callback = function(state)
+		PoolState.rainbow = state
+		if state or PoolState.enhance then
+			startPoolLoop()
+		else
+			clearClones()
+		end
+
+		if state then
+			task.spawn(function()
+				local hue = 0
+				while PoolState.rainbow do
+					hue = (hue + 0.008) % 1
+					local color = Color3.fromHSV(hue, 1, 1)
+					pcall(applyRainbowColor, color)
+					task.wait(0.025)
+				end
+			end)
+		end
+	end,
+})
+
+local GhostBalls = {
+	enabled = false,
+}
+
+local GhostBallData = {
+	["0"] = {
+		Position = Vector3.new(-102.8026428, 6.58028936, 79.2455978),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.353170216, -0.882469058, -0.310679257,
+			-0.508838534, 0.459850997, -0.727751017,
+			0.785084307, -0.098933332, -0.611438394
+		)
+	},
+
+	["1"] = {
+		Position = Vector3.new(-107.1547546, 6.42626381, 76.1043472),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.826684594, 0.363232076, -0.429713219,
+			0.515335739, 0.795366883, -0.319091648,
+			0.225874365, -0.485235035, -0.844705343
+		)
+	},
+
+	["2"] = {
+		Position = Vector3.new(-103.5933609, 6.42626381, 78.7077637),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.002587759, 0.24318105, 0.969977081,
+			0.072380052, 0.967481434, -0.24236253,
+			-0.99737376, 0.069579765, -0.020105101
+		)
+	},
+
+	["3"] = {
+		Position = Vector3.new(-111.6277008, 6.42626381, 75.9223785),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.814680636, -0.415033877, -0.40501988,
+			0.449966013, 0.892987728, -0.009977554,
+			0.36582008, -0.174116939, 0.914253891
+		)
+	},
+
+	["4"] = {
+		Position = Vector3.new(-104.1684036, 6.42626381, 78.5967255),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.735562563, 0.015810007, 0.677272499,
+			0.474628419, 0.725383103, 0.498544365,
+			-0.483400672, 0.68816328, -0.541068673
+		)
+	},
+
+	["5"] = {
+		Position = Vector3.new(-104.708107, 6.42626381, 79.4219437),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.013234899, 0.455083698, -0.890349984,
+			-0.112466, -0.88545531, -0.450910062,
+			-0.993567646, 0.094166331, 0.062900208
+		)
+	},
+
+	["6"] = {
+		Position = Vector3.new(-105.4465485, 6.42626381, 78.1256104),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.050611112, 0.340037524, 0.939049482,
+			0.204765856, 0.916746556, -0.342997491,
+			-0.97750175, 0.209644661, -0.023230841
+		)
+	},
+
+	["7"] = {
+		Position = Vector3.new(-105.9799423, 6.42626381, 77.8216171),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.958974004, -0.253411085, -0.127093106,
+			-0.166877747, -0.866997004, 0.469541758,
+			-0.229176044, -0.429069191, -0.8737154
+		)
+	},
+
+	["8"] = {
+		Position = Vector3.new(-103.870903, 6.42626381, 79.1822662),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.29953134, 0.609413922, 0.734095215,
+			0.911958098, 0.0432390719, -0.407999814,
+			-0.280382663, 0.791672408, -0.542807996
+		)
+	},
+
+	["9"] = {
+		Position = Vector3.new(-104.7770691, 6.42626381, 78.4735107),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.451985627, 0.856567979, -0.248998702,
+			-0.123218335, 0.336413771, 0.933618486,
+			0.883474946, -0.391300231, 0.257599235
+		)
+	},
+
+	["10"] = {
+		Position = Vector3.new(-103.3354874, 6.42626381, 77.8854294),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.244705468, 0.127628148, 0.961159885,
+			-0.814386188, -0.565039575, -0.132307901,
+			0.526209354, -0.815131963, 0.242206589
+		)
+	},
+
+	["11"] = {
+		Position = Vector3.new(-103.2114868, 6.42626381, 75.8303833),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.597026289, -0.684934735, 0.417638212,
+			-0.639680207, -0.720628917, -0.267405867,
+			0.484117805, -0.107507638, -0.868373216
+		)
+	},
+
+	["12"] = {
+		Position = Vector3.new(-103.8533173, 6.42626381, 79.6106949),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.960806548, 0.277190506, -0.00404644,
+			0.221347824, -0.775869012, -0.590791226,
+			-0.166900903, 0.566740274, -0.806814671
+		)
+	},
+
+	["13"] = {
+		Position = Vector3.new(-107.2511597, 6.42626381, 77.7876282),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.449999631, 0.598935544, 0.662405669,
+			0.859156191, 0.088007659, 0.504086613,
+			0.243619665, 0.795949399, -0.554180861
+		)
+	},
+
+	["14"] = {
+		Position = Vector3.new(-102.3197861, 6.42626381, 76.7901764),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			0.76884079, -0.600768507, -0.219000995,
+			-0.018634284, 0.321291537, -0.946797312,
+			0.639168859, 0.732016623, 0.235827326
+		)
+	},
+
+	["15"] = {
+		Position = Vector3.new(-103.6609497, 6.42626381, 81.5719986),
+		VisualRotation = CFrame.new(
+			0, 0, 0,
+			-0.846608877, 0.471328289, -0.247187837,
+			0.376514048, 0.858670235, 0.347737432,
+			0.376152426, 0.20132795, -0.904421449
+		)
+	},
+}
+
+Games:CreateToggle({
+	name = "Ghost Balls",
+	value = false,
+
+	callback = function(state)
+		GhostBalls.enabled = state
+
+		if not state then
+			return
+		end
+
+		task.spawn(function()
+			local Event = game:GetService("ReplicatedStorage")
+				.Remotes
+				.ShotSnapshot
+
+			while GhostBalls.enabled do
+				local BallStates = {}
+
+				for id, data in pairs(GhostBallData) do
+					BallStates[id] = {
+						AngularVelocity = Vector3.new(10000, 10000, 10000),
+						Velocity = Vector3.new(10000, 10000, 10000),
+						VisualRotation = data.VisualRotation,
+						Position = data.Position,
+					}
+				end
+
+				Event:FireServer({
+					BallStates = BallStates,
+
+					Timestamp = workspace:GetServerTimeNow(),
+
+					ShotParams = {
+						Power = 100.9262636652234,
+						Direction = Vector3.new(
+							-0.894776225,
+							100,
+							-0.446514875
+						),
+						SpinX = 1000,
+						SpinY = 0,
+					},
+				})
+
+				task.wait()
+			end
+		end)
+	end,
+})
+
+Games:CreateDivider({ text = "Boxing" })
+
+local AutoAttack = false
+Games:CreateToggle({
+	name = "Auto Attack",
+	value = false,
+	verified = false,
+	callback = function(value)
+		AutoAttack = value
+		if value then
+			task.spawn(function()
+				while AutoAttack do
+game:GetService("ReplicatedStorage").Remotes.ClientToServer:FireServer("Attack","Punch")
+					task.wait(0)
+				end
+			end)
+		else
+
+		end
+	end,
+})
+
+Fish:CreateDivider({ text = "Shop" })
+
+
+window:CreateSettingsTab()
+----------------------------------------------------------------
+-- OWNER TAB
+----------------------------------------------------------------
+local ownerTab = window:CreateOwnerTab()
+if ownerTab then
+	ownerTab:CreateText({
+		name = "Owner panel",
+		text = "UILibrary v" .. tostring(UILibrary.Version) .. "  ·  add owner-only controls below.",
+		starrable = false,
+	})
+
+	ownerTab:CreateButton({
+		name = "Test verification status",
+		buttonText = "Check",
+		starrable = false,
+		callback = function()
+			local priv = (not window.HideMarks) and (window.IsOwner or window.Verified)
+			window:Notify({
+				title = "Verification",
+				text = string.format("Owner=%s  Verified=%s  HideMarks=%s  Privileged=%s",
+					tostring(window.IsOwner), tostring(window.Verified), tostring(window.HideMarks), tostring(priv)),
+				icon = 127357392034684,
+			})
+		end,
+	})
+end
+
+--[[
+local sprintOn = false
+tab:CreateToggle({
+	name = "Auto Sprint",
+	value = false,
+	verified = false,
+	callback = function(value)
+		sprintOn = value
+		if value then
+			task.spawn(function()
+				while sprintOn do
+					print("Auto Sprint: true")
+					task.wait(0)
+				end
+			end)
+		else
+			print("Auto Sprint: false")
+		end
+	end,
+})
+tab:CreateButton({
+	name = "Reset character",
+	verified = false,
+	callback = function()
+		local char = game.Players.LocalPlayer.Character
+		if char then
+			char:BreakJoints()
+		end
+		window:Notify({
+			title = "Character reset",
+			text = "Joints broken.",
+			icon = 127357392034684,
+			duration = 4,
+		})
+	end,
+})
+-- Locked until Auto Sprint is on (Dependencies / Depencies both work)
+tab:CreateButton({
+	name = "Verify check",
+	verified = true,
+	Dependencies = "Auto Sprint",
+	callback = function()
+		window:Notify({
+			title = "Verified action",
+			text = "You passed the verified gate.",
+			icon = 127357392034684,
+			duration = 4,
+		})
+	end,
+})
+-- Force a keybind chip even if Settings → Keybind buttons is off
+tab:CreateButton({
+	name = "Forced keybind button",
+	keybind = true, -- or Enum.KeyCode.F for a default
+	callback = function()
+		window:Notify({
+			title = "Keybind fire",
+			text = "This button always has a keybind slot.",
+			icon = 127357392034684,
+		})
+	end,
+})
+tab:CreateSlider({
+	name = "Field of view",
+	range = { 70, 120 },
+	increment = 1,
+	value = 90,
+	suffix = "°",
+	callback = function(value)
+		workspace.CurrentCamera.FieldOfView = value
+	end,
+})
+tab:CreateDropdown({
+	name = "HUD Elements",
+	multiSelect = true,
+	options = { "Minimap", "Chat", "Notifications", "Coordinates" },
+	value = { "Chat" },
+	callback = function(selected)
+		print("HUD elements:", table.concat(selected, ", "))
+	end,
+})
+tab:CreateInput({
+	name = "Max players",
+	numeric = true,
+	value = "16",
+	placeholder = "Enter a number",
+	callback = function(text)
+		print("Committed:", text)
+	end,
+})
+tab:CreateKeybind({
+	name = "Sprint",
+	value = Enum.KeyCode.LeftShift,
+	callback = function(key)
+		print("Pressed", key.Name)
+	end,
+})
+tab:CreateColorPicker({
+	name = "Highlight",
+	color = Color3.fromRGB(96, 205, 255),
+	callback = function(color, alpha)
+		print(color, alpha)
+	end,
+})
+tab:CreateStat({ name = "Revenue", prefix = "$", value = 12400 })
+tab:CreateProgress({ name = "Download", range = { 0, 100 }, value = 35 })
+tab:CreateConsole({ name = "Example", text = 'print("Hello world")' })
+]]
