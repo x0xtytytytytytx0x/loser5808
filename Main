@@ -1,1 +1,11 @@
-
+{
+  "games": [
+    {
+      "name": "TEST",
+      "placeId": 119048529960596,
+      "imageId": 1062769146,
+      "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytytx0x/loser5808/refs/heads/main/Poke",
+      "verified": false
+    }
+  ]
+}
