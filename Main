@@ -4,13 +4,15 @@
       "name": "TEST",
       "placeId": 119048529960596,
       "imageId": 1062769146,
-      "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytx0x/loser5808/refs/heads/main/Poke",
+      "description": "Test poke script",
+      "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytytx0x/loser5808/refs/heads/main/Poke",
       "verified": false
     },
     {
       "name": "juangamer62",
       "placeId": 119048529960596,
       "imageId": 6319951708,
+      "description": "Same place test entry",
       "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytytx0x/loser5808/refs/heads/main/Poke",
       "verified": false
     }
