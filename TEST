@@ -1,0 +1,7 @@
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
+local window = UILibrary:CreateWindow({UsePremadeScripts = false})
+
+local tab = window:CreateTab({ name = "NAME", icon = 127357392034684 })
+tab:CreateDivider({ text = "YOOOO WE LOADED" })
+window:CreateSettingsTab()
+window:CreateOwnerTab()
