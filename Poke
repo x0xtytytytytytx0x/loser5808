@@ -1,12 +1,6 @@
 
 local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
-local window = UILibrary:CreateWindow({
-	name = "R8//TW0",
-	theme = "R8TW0",
-	skipFakeLoading = false,
-	matrix = true,
-	description = "R8//TW0 UI library demo  ·  v" .. tostring(UILibrary.Version or "6.5"),
-})
+local window = UILibrary:CreateWindow({UsePremadeScripts = true})
 local tab = window:CreateTab({
 	name = "World",
 	icon = 11395780588,
@@ -21,12 +15,6 @@ local Games = window:CreateTab({
 	name = "Games",
 	icon = 112061798075673,
 })
-
-local Fish = window:CreateTab({
-	name = "Fish",
-	icon = 95364946308686,
-})
-
 
 -- Sleeping Beauty Counter (put this in your Home / main tab)
 local Players = game:GetService("Players")
@@ -1755,8 +1743,525 @@ game:GetService("ReplicatedStorage").Remotes.ClientToServer:FireServer("Attack",
 	end,
 })
 
-Fish:CreateDivider({ text = "Shop" })
 
+
+
+
+
+----------------------------------------------------------------
+-- PLAYER LOOKUP (single tab + toggles, no extra tabs)
+----------------------------------------------------------------
+do
+	local Players = game:GetService("Players")
+
+	local SelectedPlayer = nil
+	local nameCache = {}
+	local showLikes = true
+	local showDislikes = true
+	local showComments = true
+	local showDonations = true
+
+	local function idToName(userId)
+		userId = tonumber(userId)
+		if not userId or userId <= 0 then return "?" end
+		if nameCache[userId] then return nameCache[userId] end
+		local ok, name = pcall(function()
+			return Players:GetNameFromUserIdAsync(userId)
+		end)
+		nameCache[userId] = (ok and name) or ("id:" .. tostring(userId))
+		return nameCache[userId]
+	end
+
+	local function rawVal(obj)
+		if obj == nil then return nil end
+		if typeof(obj) ~= "Instance" then return obj end
+		if obj:IsA("ValueBase") then return obj.Value end
+		local a = obj:GetAttribute("Value") or obj:GetAttribute("UserId") or obj:GetAttribute("Id")
+		if a ~= nil then return a end
+		return nil
+	end
+
+	local function valStr(obj)
+		local v = rawVal(obj)
+		if v == nil then return "—" end
+		return tostring(v)
+	end
+
+	local function getProfile(plr)
+		return plr and plr:FindFirstChild("Profile")
+	end
+
+	local function findPlayer(query)
+		query = string.lower(tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		if query == "" then return nil end
+		local partial = nil
+		for _, plr in ipairs(Players:GetPlayers()) do
+			local n = string.lower(plr.Name)
+			local d = string.lower(plr.DisplayName)
+			if n == query or d == query then return plr end
+			if not partial and (string.find(n, query, 1, true) or string.find(d, query, 1, true)) then
+				partial = plr
+			end
+		end
+		return partial
+	end
+
+	local function collectIdList(idsFolder)
+		local list = {}
+		if not idsFolder then return list end
+		local entries = {}
+		for _, c in ipairs(idsFolder:GetChildren()) do
+			local idx = tonumber(c.Name)
+			local id = nil
+			if c:IsA("ValueBase") then
+				id = tonumber(c.Value)
+			else
+				local v = c:FindFirstChildWhichIsA("ValueBase")
+				if v then id = tonumber(v.Value) end
+				if not id then id = tonumber(rawVal(c)) end
+			end
+			if idx and id then
+				table.insert(entries, { idx = idx, id = id })
+			elseif id and not idx then
+				table.insert(entries, { idx = #entries + 1, id = id })
+			elseif idx and not id then
+				local a = c:GetAttribute("Value") or c:GetAttribute("UserId")
+				id = tonumber(a)
+				if id then table.insert(entries, { idx = idx, id = id }) end
+			end
+		end
+		if #entries == 0 then
+			for attr, aval in pairs(idsFolder:GetAttributes()) do
+				local idx = tonumber(attr)
+				local id = tonumber(aval)
+				if idx and id then table.insert(entries, { idx = idx, id = id }) end
+			end
+		end
+		if #entries == 0 then
+			local n = 0
+			for _, d in ipairs(idsFolder:GetDescendants()) do
+				if d:IsA("ValueBase") then
+					local id = tonumber(d.Value)
+					if id and id > 0 then
+						n += 1
+						table.insert(entries, { idx = tonumber(d.Name) or n, id = id })
+					end
+				end
+			end
+		end
+		table.sort(entries, function(a, b) return a.idx < b.idx end)
+		local seen = {}
+		for _, e in ipairs(entries) do
+			if not seen[e.id] then
+				seen[e.id] = true
+				table.insert(list, e.id)
+			end
+		end
+		return list
+	end
+
+	local function setCtrlText(ctrl, text)
+		if not ctrl then return end
+		text = tostring(text or "—")
+		if ctrl.Set then pcall(function() ctrl:Set(text) end)
+		elseif ctrl.set then pcall(function() ctrl:set(text) end)
+		elseif ctrl.SetText then pcall(function() ctrl:SetText(text) end)
+		else pcall(function() if ctrl.Text ~= nil then ctrl.Text = text end end)
+		end
+	end
+
+	local function setStat(ctrl, text)
+		setCtrlText(ctrl, text)
+	end
+
+	local function setDropdownOptions(drop, options)
+		if not drop then return end
+		options = options or { "(empty)" }
+		if #options == 0 then options = { "(empty)" } end
+		-- try every common API the library might expose
+		pcall(function()
+			if drop.SetOptions then drop:SetOptions(options) end
+		end)
+		pcall(function()
+			if drop.setOptions then drop:setOptions(options) end
+		end)
+		pcall(function()
+			if drop.Refresh then drop:Refresh(options) end
+		end)
+		pcall(function()
+			if drop.Clear then drop:Clear() end
+		end)
+		pcall(function()
+			if drop.AddOption then
+				for _, o in ipairs(options) do
+					drop:AddOption(o)
+				end
+			end
+		end)
+		pcall(function()
+			if drop.Options ~= nil then drop.Options = options end
+		end)
+		pcall(function()
+			if drop.SetValue then drop:SetValue(options[1])
+			elseif drop.Set then drop:Set(options[1]) end
+		end)
+	end
+
+	------------------------------------------------------------
+	local LookupTab = window:CreateTab({ name = "Lookup", icon = 124545130263244 })
+
+	LookupTab:CreateDivider({ text = "Search" })
+	LookupTab:CreateText({
+		name = "Tip",
+		text = "Partial name → Load. Use toggles below to include Likes / Dislikes / Comments / Donations.",
+		starrable = false,
+	})
+	local searchBox = LookupTab:CreateInput({
+		name = "Player",
+		placeholder = "partial name…",
+		value = "",
+		callback = function() end,
+	})
+	local function getSearchText()
+		if not searchBox then return "" end
+		if searchBox.Get then
+			local ok, t = pcall(function() return searchBox:Get() end)
+			if ok and t ~= nil then return tostring(t) end
+		end
+		if searchBox.get then
+			local ok, t = pcall(function() return searchBox:get() end)
+			if ok and t ~= nil then return tostring(t) end
+		end
+		return ""
+	end
+
+	LookupTab:CreateDivider({ text = "Sections" })
+	LookupTab:CreateToggle({
+		name = "Load likes",
+		value = true,
+		callback = function(v) showLikes = v and true or false end,
+	})
+	LookupTab:CreateToggle({
+		name = "Load dislikes",
+		value = true,
+		callback = function(v) showDislikes = v and true or false end,
+	})
+	LookupTab:CreateToggle({
+		name = "Load comments",
+		value = true,
+		callback = function(v) showComments = v and true or false end,
+	})
+	LookupTab:CreateToggle({
+		name = "Load donations",
+		value = true,
+		callback = function(v) showDonations = v and true or false end,
+	})
+
+	LookupTab:CreateDivider({ text = "Profile" })
+	local st = {
+		who = LookupTab:CreateStat({ name = "Player", value = "—" }),
+		robux = LookupTab:CreateStat({ name = "Robux donated", value = "—" }),
+		timePlayed = LookupTab:CreateStat({ name = "Time played", value = "—" }),
+		doubloons = LookupTab:CreateStat({ name = "Poke doubloons", value = "—" }),
+		likes = LookupTab:CreateStat({ name = "Likes (count)", value = "—" }),
+		dislikes = LookupTab:CreateStat({ name = "Dislikes (count)", value = "—" }),
+		comments = LookupTab:CreateStat({ name = "Comments (count)", value = "—" }),
+		bxKills = LookupTab:CreateStat({ name = "Boxing kills", value = "—" }),
+		bxWins = LookupTab:CreateStat({ name = "Boxing wins", value = "—" }),
+		bxStreak = LookupTab:CreateStat({ name = "Boxing highest streak", value = "—" }),
+		doubRecv = LookupTab:CreateStat({ name = "Doubloons received", value = "—" }),
+		doubSent = LookupTab:CreateStat({ name = "Doubloons sent", value = "—" }),
+		robuxRecv = LookupTab:CreateStat({ name = "Robux received (hist)", value = "—" }),
+		robuxSent = LookupTab:CreateStat({ name = "Robux sent (hist)", value = "—" }),
+	}
+
+	local function loadProfileStats(plr)
+		setStat(st.who, plr.DisplayName .. " (@" .. plr.Name .. ")")
+		setStat(st.robux, valStr(plr:FindFirstChild("RobuxDonated")))
+		local profile = getProfile(plr)
+		if not profile then
+			setStat(st.timePlayed, "no Profile")
+			return
+		end
+		setStat(st.timePlayed, valStr(profile:FindFirstChild("Time_Played")))
+		setStat(st.doubloons, valStr(profile:FindFirstChild("Poke_Doubloons")))
+		local social = profile:FindFirstChild("Social")
+		if social then
+			setStat(st.likes, valStr(social:FindFirstChild("Likes")))
+			setStat(st.dislikes, valStr(social:FindFirstChild("Dislikes")))
+			setStat(st.comments, valStr(social:FindFirstChild("Comments")))
+		end
+		local boxing = profile:FindFirstChild("Boxing")
+		if boxing then
+			setStat(st.bxKills, valStr(boxing:FindFirstChild("Kills")))
+			setStat(st.bxWins, valStr(boxing:FindFirstChild("Wins")))
+			setStat(st.bxStreak, valStr(boxing:FindFirstChild("HighestStreak_V2") or boxing:FindFirstChild("HighestStreak")))
+		end
+		local hist = profile:FindFirstChild("History")
+		local donAmt = hist and hist:FindFirstChild("DonationAmounts")
+		if donAmt then
+			setStat(st.doubRecv, valStr(donAmt:FindFirstChild("DoubloonReceived")))
+			setStat(st.doubSent, valStr(donAmt:FindFirstChild("DoubloonSent")))
+			setStat(st.robuxRecv, valStr(donAmt:FindFirstChild("Received")))
+			setStat(st.robuxSent, valStr(donAmt:FindFirstChild("Sent")))
+		end
+	end
+
+	LookupTab:CreateDivider({ text = "Lists" })
+
+	local likesDrop = LookupTab:CreateDropdown({
+		name = "Liked by",
+		multiSelect = false,
+		options = { "(load a player)" },
+		value = "(load a player)",
+		callback = function() end,
+	})
+	local dislikesDrop = LookupTab:CreateDropdown({
+		name = "Disliked by",
+		multiSelect = false,
+		options = { "(load a player)" },
+		value = "(load a player)",
+		callback = function() end,
+	})
+	local donationsDrop = LookupTab:CreateDropdown({
+		name = "Donations",
+		multiSelect = false,
+		options = { "(load a player)" },
+		value = "(load a player)",
+		callback = function() end,
+	})
+
+	-- Comments: dropdown of ALL entries + detail under it
+	local commentEntries = {}
+	local commentDetail
+	local commentsDrop = LookupTab:CreateDropdown({
+		name = "Comments",
+		multiSelect = false,
+		options = { "(load a player)" },
+		value = "(load a player)",
+		callback = function(choice)
+			if type(choice) ~= "string" then return end
+			if choice:find("^%(") then
+				setCtrlText(commentDetail, "Select a comment.")
+				return
+			end
+			local idx = tonumber(choice:match("^#(%d+)"))
+			local node = idx and commentEntries[idx]
+			if not node then
+				setCtrlText(commentDetail, "Could not resolve comment.")
+				return
+			end
+			local info = valStr(node:FindFirstChild("Info"))
+			local pinned = rawVal(node:FindFirstChild("Pinned"))
+			local pid = rawVal(node:FindFirstChild("PlayerID"))
+			local pname = valStr(node:FindFirstChild("PlayerName"))
+			if pname == "—" or pname == "" then pname = idToName(pid) end
+			local time = valStr(node:FindFirstChild("Time"))
+			local pinTag = (pinned == true or tostring(pinned) == "true") and " [PINNED]" or ""
+			setCtrlText(commentDetail, string.format(
+				"#%s%s\nFrom: %s [%s]\nTime: %s\n\n%s",
+				tostring(idx), pinTag, tostring(pname), tostring(pid), tostring(time), tostring(info)
+			))
+		end,
+	})
+	commentDetail = LookupTab:CreateText({
+		name = "Comment body",
+		text = "Select a comment from the dropdown.",
+		starrable = false,
+	})
+
+	local function loadLikes(plr)
+		if not showLikes then
+			setDropdownOptions(likesDrop, { "(toggled off)" })
+			return
+		end
+		local profile = getProfile(plr)
+		local likes = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("LikesDislikes")
+			and profile.History.LikesDislikes:FindFirstChild("Likes")
+		if not likes then
+			setDropdownOptions(likesDrop, { "(no data)" })
+			return
+		end
+		local ids = collectIdList(likes:FindFirstChild("IDs"))
+		local opts = {}
+		for i, id in ipairs(ids) do
+			table.insert(opts, string.format("%d. %s  [%s]", i, idToName(id), tostring(id)))
+		end
+		setDropdownOptions(likesDrop, #opts > 0 and opts or { "(empty)" })
+	end
+
+	local function loadDislikes(plr)
+		if not showDislikes then
+			setDropdownOptions(dislikesDrop, { "(toggled off)" })
+			return
+		end
+		local profile = getProfile(plr)
+		local dis = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("LikesDislikes")
+			and profile.History.LikesDislikes:FindFirstChild("Dislikes")
+		if not dis then
+			setDropdownOptions(dislikesDrop, { "(no data)" })
+			return
+		end
+		local ids = collectIdList(dis:FindFirstChild("IDs"))
+		local opts = {}
+		for i, id in ipairs(ids) do
+			table.insert(opts, string.format("%d. %s  [%s]", i, idToName(id), tostring(id)))
+		end
+		setDropdownOptions(dislikesDrop, #opts > 0 and opts or { "(empty)" })
+	end
+
+	local function loadDonations(plr)
+		if not showDonations then
+			setDropdownOptions(donationsDrop, { "(toggled off)" })
+			return
+		end
+		local profile = getProfile(plr)
+		local dons = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("Donations")
+		if not dons then
+			setDropdownOptions(donationsDrop, { "(no data)" })
+			return
+		end
+		local entries = {}
+		for _, c in ipairs(dons:GetChildren()) do
+			local idx = tonumber(c.Name)
+			if idx then table.insert(entries, { idx = idx, node = c }) end
+		end
+		table.sort(entries, function(a, b) return a.idx < b.idx end)
+		local opts = {}
+		for _, e in ipairs(entries) do
+			local n = e.node
+			local amount = valStr(n:FindFirstChild("Amount"))
+			local dir = valStr(n:FindFirstChild("Direction"))
+			local pid = rawVal(n:FindFirstChild("PlayerID"))
+			local pname = valStr(n:FindFirstChild("PlayerName"))
+			if pname == "—" or pname == "" then pname = idToName(pid) end
+			local time = valStr(n:FindFirstChild("Time"))
+			table.insert(opts, string.format("#%s %s %s → %s (%s)", tostring(e.idx), tostring(dir), tostring(amount), tostring(pname), tostring(time)))
+		end
+		setDropdownOptions(donationsDrop, #opts > 0 and opts or { "(empty)" })
+	end
+
+	local function loadComments(plr)
+		commentEntries = {}
+		if not showComments then
+			setDropdownOptions(commentsDrop, { "(toggled off)" })
+			setCtrlText(commentDetail, "Comments toggled off.")
+			return
+		end
+		local profile = getProfile(plr)
+		local comments = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("Comments")
+		if not comments then
+			setDropdownOptions(commentsDrop, { "(no data)" })
+			setCtrlText(commentDetail, "No History.Comments")
+			return
+		end
+
+		local entries = {}
+		for _, c in ipairs(comments:GetChildren()) do
+			local idx = tonumber(c.Name)
+			if idx then
+				table.insert(entries, { idx = idx, node = c })
+			end
+		end
+		-- also accept non-numeric if needed
+		if #entries == 0 then
+			local n = 0
+			for _, c in ipairs(comments:GetChildren()) do
+				n += 1
+				table.insert(entries, { idx = n, node = c })
+			end
+		end
+		table.sort(entries, function(a, b) return a.idx < b.idx end)
+
+		local opts = {}
+		for _, e in ipairs(entries) do
+			commentEntries[e.idx] = e.node
+			local pname = valStr(e.node:FindFirstChild("PlayerName"))
+			local pid = rawVal(e.node:FindFirstChild("PlayerID"))
+			if pname == "—" or pname == "" then pname = idToName(pid) end
+			local pinned = rawVal(e.node:FindFirstChild("Pinned"))
+			local pinTag = (pinned == true or tostring(pinned) == "true") and " *" or ""
+			local preview = valStr(e.node:FindFirstChild("Info"))
+			if #preview > 40 then preview = preview:sub(1, 40) .. "…" end
+			table.insert(opts, string.format("#%d %s%s — %s", e.idx, tostring(pname), pinTag, preview))
+		end
+
+		setDropdownOptions(commentsDrop, #opts > 0 and opts or { "(empty)" })
+		setCtrlText(commentDetail, string.format("%d comment(s). Pick one in the dropdown.", #opts))
+
+		-- auto-show first comment body
+		if #entries > 0 then
+			local e = entries[1]
+			local n = e.node
+			local info = valStr(n:FindFirstChild("Info"))
+			local pinned = rawVal(n:FindFirstChild("Pinned"))
+			local pid = rawVal(n:FindFirstChild("PlayerID"))
+			local pname = valStr(n:FindFirstChild("PlayerName"))
+			if pname == "—" or pname == "" then pname = idToName(pid) end
+			local time = valStr(n:FindFirstChild("Time"))
+			local pinTag = (pinned == true or tostring(pinned) == "true") and " [PINNED]" or ""
+			setCtrlText(commentDetail, string.format(
+				"#%s%s\nFrom: %s [%s]\nTime: %s\n\n%s",
+				tostring(e.idx), pinTag, tostring(pname), tostring(pid), tostring(time), tostring(info)
+			))
+		end
+	end
+
+	local function loadAll(plr)
+		SelectedPlayer = plr
+		loadProfileStats(plr)
+		loadLikes(plr)
+		loadDislikes(plr)
+		loadComments(plr)
+		loadDonations(plr)
+	end
+
+	LookupTab:CreateButton({
+		name = "Load player",
+		buttonText = "Load",
+		callback = function()
+			local q = getSearchText()
+			local plr = findPlayer(q)
+			if not plr then
+				window:Notify({
+					title = "Lookup",
+					text = "No player matched \"" .. tostring(q) .. "\".",
+					icon = 127357392034684,
+					duration = 3,
+				})
+				return
+			end
+			loadAll(plr)
+			window:Notify({
+				title = "Lookup",
+				text = "Loaded " .. plr.DisplayName .. " (@" .. plr.Name .. ")",
+				icon = 127357392034684,
+				duration = 2,
+			})
+		end,
+	})
+
+	LookupTab:CreateButton({
+		name = "Reload lists",
+		buttonText = "Reload",
+		callback = function()
+			if not SelectedPlayer or not SelectedPlayer.Parent then
+				window:Notify({ title = "Lookup", text = "Load a player first.", icon = 127357392034684, duration = 3 })
+				return
+			end
+			loadAll(SelectedPlayer)
+			window:Notify({ title = "Lookup", text = "Lists refreshed.", icon = 127357392034684, duration = 2 })
+		end,
+	})
+end
 
 window:CreateSettingsTab()
 ----------------------------------------------------------------
