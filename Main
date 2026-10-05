@@ -1,10 +1,10 @@
 {
   "games": [
     {
-      "name": "TEST",
-      "placeId": 119048529960596,
-      "imageId": 1062769146,
-      "description": "Test poke script",
+      "name": "Poke Haven 🔉18+",
+      "placeId": 16331682055,
+      "imageId": 121981553615253,
+      "description": "Poke script. (it's messy lol sorry)",
       "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytytx0x/loser5808/refs/heads/main/TEST",
       "verified": false
     },
