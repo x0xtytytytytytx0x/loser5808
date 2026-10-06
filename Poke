@@ -279,6 +279,130 @@ tab:CreateButton({
 ----------------------------------------------------------------
 -- WORLD: auto get / mix / place
 ----------------------------------------------------------------
+
+----------------------------------------------------------------
+-- WORLD: Warning pipeline (mix SB to 1000 → rapid equip)
+----------------------------------------------------------------
+tab:CreateDivider({ text = "Warning" })
+tab:CreateText({
+	name = "Warning stages",
+	text = "Stage 1: Auto Get+Mix ??? until Sleeping Beauty hits 1000.\nStage 2: Rapid tool equip until this toggle is off.",
+	starrable = false,
+})
+
+local WarningOn = false
+local warningStageStat = tab:CreateStat({ name = "Warning stage", value = "idle" })
+local warningCountStat = tab:CreateStat({ name = "SB count", value = "0 / 1000" })
+
+tab:CreateToggle({
+	name = "Warning pipeline",
+	value = false,
+	callback = function(state)
+		WarningOn = state
+		if not state then
+			pcall(function() warningStageStat:Set("idle") end)
+			window:Notify({ title = "Warning", text = "Stopped.", icon = 127357392034684, duration = 2 })
+			return
+		end
+		pcall(function() warningStageStat:Set("mixing") end)
+		window:Notify({ title = "Warning", text = "Stage 1 — mix to 1000 SB.", icon = 127357392034684, duration = 3 })
+
+		task.spawn(function()
+			-- reuse same logic as Auto Get + Mix until count >= 1000
+			getgenv().AutoGetMix = true
+			local startMix = true
+			-- enable existing auto mix by setting flag; also run own loop so we can transition
+			local ReplicatedStorage = game:GetService("ReplicatedStorage")
+			local ToolAction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ToolAction")
+			local SleepingBeautyBottle = workspace:WaitForChild("GameAssets")
+				:WaitForChild("Interactables")
+				:WaitForChild("Bottles")
+				:WaitForChild("Sleeping Beauty")
+			local ITEM_NAME = "???"
+
+			local function countItem(char, backpack)
+				local count = 0
+				if backpack then
+					for _, item in ipairs(backpack:GetChildren()) do
+						if item.Name == ITEM_NAME then count += 1 end
+					end
+				end
+				local held = char and char:FindFirstChildOfClass("Tool")
+				if held and held.Name == ITEM_NAME then count += 1 end
+				return count
+			end
+
+			while WarningOn and getSleepingBeautyCount() < 1000 do
+				pcall(function()
+					warningCountStat:Set(tostring(getSleepingBeautyCount()) .. " / 1000")
+				end)
+				local char = player.Character
+				local backpack = player:FindFirstChild("Backpack")
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+				if char and backpack and humanoid then
+					if countItem(char, backpack) < 5 then
+						local drinkArtist = workspace:FindFirstChild("GameAssets")
+							and workspace.GameAssets:FindFirstChild("Interactables")
+							and workspace.GameAssets.Interactables:FindFirstChild("Givers")
+							and workspace.GameAssets.Interactables.Givers:FindFirstChild("DrinkArtist")
+						if drinkArtist then
+							local model = drinkArtist:FindFirstChild(ITEM_NAME, true)
+							local cd = model and model:FindFirstChildOfClass("ClickDetector")
+							if not cd then
+								for _, child in ipairs(drinkArtist:GetChildren()) do
+									local m = child:FindFirstChild(ITEM_NAME)
+									if m then
+										cd = m:FindFirstChildOfClass("ClickDetector")
+										if cd then break end
+									end
+								end
+							end
+							if cd then pcall(function() fireclickdetector(cd) end) end
+						end
+					end
+					local item = backpack:FindFirstChild(ITEM_NAME)
+					if item then
+						humanoid:EquipTool(item)
+						task.wait(0.05)
+					end
+					local held = char:FindFirstChildOfClass("Tool")
+					if held and held.Name == ITEM_NAME then
+						ToolAction:FireServer("Mix", SleepingBeautyBottle, 0)
+					end
+				end
+				task.wait(0.05)
+			end
+
+			getgenv().AutoGetMix = false
+			if not WarningOn then
+				pcall(function() warningStageStat:Set("idle") end)
+				return
+			end
+
+			pcall(function() warningStageStat:Set("equip") end)
+			window:Notify({ title = "Warning", text = "1000 SB — rapid equip on.", icon = 127357392034684, duration = 3 })
+
+			while WarningOn do
+				local character = player.Character
+				local backpack = player:FindFirstChildOfClass("Backpack")
+				if character and backpack then
+					for _, tool in ipairs(backpack:GetChildren()) do
+						if tool:IsA("Tool") then tool.Parent = character end
+					end
+					for _, tool in ipairs(character:GetChildren()) do
+						if tool:IsA("Tool") then tool.Parent = backpack end
+					end
+				end
+				pcall(function()
+					warningCountStat:Set(tostring(getSleepingBeautyCount()) .. " / 1000")
+				end)
+				task.wait()
+			end
+			pcall(function() warningStageStat:Set("idle") end)
+		end)
+	end,
+})
+
 tab:CreateDivider({ text = "Auto drinks" })
 
 getgenv().AutoGetMix = false
@@ -597,8 +721,42 @@ local function ensureGlass()
 end
 
 local function mix(...)
+	local ALIAS = {
+		jackd4n = { "JackD4n", "Jack", "Jack Daniels" },
+		baely = { "Baely", "Baelys", "Bailey", "Baileys" },
+		baelys = { "Baelys", "Baely", "Baileys" },
+		curecaos = { "Curecaos", "Cruecaos", "Curacao" },
+		cruecaos = { "Cruecaos", "Curecaos" },
+		vodeka = { "Vodeka", "Vodka" },
+		chavas = { "Chavas", "Chivas" },
+		paranoid = { "Paranoid", "Pernod" },
+		beefeter = { "Beefeter", "Beefeater", "British Beefeater" },
+		beefeater = { "British Beefeater", "Beefeater", "Beefeter" },
+		lemon = { "Lemon Juice", "Lemon" },
+		lime = { "Lime Juice", "Lime" },
+		khlua = { "Khlua", "Kahlua" },
+		kahlua = { "Kahlua", "Khlua" },
+		redbull = { "Redbull", "Red Bull" },
+	}
+	local function resolve(name)
+		local b = Bottles:FindFirstChild(name)
+		if b then return b end
+		local key = string.lower(tostring(name)):gsub("%s+", "")
+		if ALIAS[key] then
+			for _, a in ipairs(ALIAS[key]) do
+				b = Bottles:FindFirstChild(a)
+				if b then return b end
+			end
+		end
+		local lower = string.lower(tostring(name))
+		for _, c in ipairs(Bottles:GetChildren()) do
+			local cn = string.lower(c.Name)
+			if cn == lower or string.find(cn, lower, 1, true) then return c end
+		end
+		return nil
+	end
 	for _, bottleName in ipairs({...}) do
-		local bottle = Bottles:FindFirstChild(bottleName)
+		local bottle = resolve(bottleName)
 		if bottle then
 			ToolAction:FireServer("Mix", bottle, 0)
 		else
@@ -691,6 +849,185 @@ for _, recipe in ipairs(margRecipes) do
 		end,
 	})
 end
+
+----------------------------------------------------------------
+-- DRINKS · Pure (1 bottle into selected glass)
+----------------------------------------------------------------
+Drinks:CreateDivider({ text = "Pure" })
+Drinks:CreateText({
+	name = "Pure info",
+	text = "One bottle only into the glass type selected above.",
+	starrable = false,
+})
+
+local pureNames = {}
+for _, b in ipairs(Bottles:GetChildren()) do
+	table.insert(pureNames, b.Name)
+end
+table.sort(pureNames)
+local SelectedPure = pureNames[1] or "HolyWater"
+
+Drinks:CreateDropdown({
+	name = "Pure bottle",
+	multiSelect = false,
+	options = #pureNames > 0 and pureNames or { "(none)" },
+	value = SelectedPure,
+	callback = function(choice)
+		if choice then SelectedPure = choice end
+	end,
+})
+
+Drinks:CreateButton({
+	name = "Pour pure",
+	buttonText = "Pour",
+	callback = function()
+		if not ensureGlass() then
+			window:Notify({ title = "Pure", text = "Could not equip glass.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		task.wait(0.08)
+		mix(SelectedPure)
+		task.wait(0.05)
+		addEnabledCosmetics()
+	end,
+})
+
+----------------------------------------------------------------
+-- DRINKS · Secret / special
+----------------------------------------------------------------
+Drinks:CreateDivider({ text = "Secret" })
+local secretRecipes = {
+	{ "Da Bird", { "JackD4n", "Baely", "Curecaos", "Milk" } },
+	{ "Menma", { "Vodeka", "Chavas", "Curecaos", "Jack" } },
+	{ "Dream Punk", { "Jack", "Paranoid", "Curecaos", "Milk" } },
+	{ "Grey Garden", { "Beefeter", "Tonic", "Lemon", "Milk" } },
+}
+for _, recipe in ipairs(secretRecipes) do
+	local name, ingredients = recipe[1], recipe[2]
+	Drinks:CreateButton({
+		name = name,
+		buttonText = "Make",
+		callback = function()
+			makeDrink(table.unpack(ingredients))
+		end,
+	})
+end
+
+----------------------------------------------------------------
+-- DRINKS · Custom (from CustomDrinkList UI)
+----------------------------------------------------------------
+Drinks:CreateDivider({ text = "Custom" })
+Drinks:CreateText({
+	name = "Custom info",
+	text = "Open the in-game custom drink list, Refresh, pick one, Make.",
+	starrable = false,
+})
+
+local customMap = {}
+local customDrop = Drinks:CreateDropdown({
+	name = "Custom drink",
+	multiSelect = false,
+	options = { "(refresh)" },
+	value = "(refresh)",
+	callback = function() end,
+})
+
+local function setDropOptions(drop, options)
+	if not drop then return end
+	if #options == 0 then options = { "(empty)" } end
+	pcall(function() if drop.SetOptions then drop:SetOptions(options) end end)
+	pcall(function() if drop.Refresh then drop:Refresh(options) end end)
+	pcall(function() if drop.Options ~= nil then drop.Options = options end end)
+	pcall(function()
+		if drop.SetValue then drop:SetValue(options[1])
+		elseif drop.Set then drop:Set(options[1]) end
+	end)
+end
+
+local function parseCustomDrinks()
+	customMap = {}
+	local pg = player:FindFirstChild("PlayerGui")
+	local list = pg
+		and pg:FindFirstChild("CustomDrinkList")
+		and pg.CustomDrinkList:FindFirstChild("GlobalList")
+		and pg.CustomDrinkList.GlobalList:FindFirstChild("ClipLayer")
+		and pg.CustomDrinkList.GlobalList.ClipLayer:FindFirstChild("DrinkList")
+	if not list then return { "(open custom drink UI)" } end
+	local opts = {}
+	for _, child in ipairs(list:GetChildren()) do
+		if child:FindFirstChild("DrinkName") or child:FindFirstChild("RecipeClipLayer") or child.Name == "CustomDrink" then
+			local drinkName = "Custom"
+			local nameInst = child:FindFirstChild("DrinkName")
+			if nameInst then
+				if nameInst:IsA("TextLabel") or nameInst:IsA("TextBox") then
+					drinkName = nameInst.Text
+				elseif nameInst:IsA("StringValue") then
+					drinkName = nameInst.Value
+				else
+					local tl = nameInst:FindFirstChildWhichIsA("TextLabel", true)
+					if tl then drinkName = tl.Text end
+				end
+			end
+			local ingredients = {}
+			local recipeInfo = child:FindFirstChild("RecipeClipLayer")
+				and child.RecipeClipLayer:FindFirstChild("RecipeInfo")
+			if recipeInfo then
+				for _, entry in ipairs(recipeInfo:GetChildren()) do
+					local label = entry:FindFirstChild("TextLabel") or entry:FindFirstChildWhichIsA("TextLabel", true)
+					if label and label.Text ~= "" then
+						table.insert(ingredients, label.Text)
+					end
+				end
+			end
+			local label = drinkName
+			if #ingredients > 0 then
+				label = drinkName .. " (" .. table.concat(ingredients, " + ") .. ")"
+			end
+			local key = label
+			local n = 2
+			while customMap[key] do
+				key = label .. " #" .. n
+				n += 1
+			end
+			customMap[key] = ingredients
+			table.insert(opts, key)
+		end
+	end
+	table.sort(opts)
+	return #opts > 0 and opts or { "(none found)" }
+end
+
+Drinks:CreateButton({
+	name = "Refresh custom list",
+	buttonText = "Refresh",
+	callback = function()
+		local opts = parseCustomDrinks()
+		setDropOptions(customDrop, opts)
+		window:Notify({ title = "Custom", text = "Found " .. tostring(#opts) .. " drink(s).", icon = 127357392034684, duration = 2 })
+	end,
+})
+
+Drinks:CreateButton({
+	name = "Make custom",
+	buttonText = "Make",
+	callback = function()
+		local choice = nil
+		if customDrop.Get then
+			local ok, v = pcall(function() return customDrop:Get() end)
+			if ok then choice = v end
+		end
+		if not choice then
+			for k in pairs(customMap) do choice = k break end
+		end
+		local ingredients = choice and customMap[choice]
+		if not ingredients or #ingredients == 0 then
+			window:Notify({ title = "Custom", text = "Refresh while the list is open.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		makeDrink(table.unpack(ingredients))
+	end,
+})
+
 
 Games:CreateDivider({ text = "Piano" })
 Games:CreateText({
@@ -1913,7 +2250,7 @@ do
 	LookupTab:CreateDivider({ text = "Search" })
 	LookupTab:CreateText({
 		name = "Tip",
-		text = "Partial name → Load. Use toggles below to include Likes / Dislikes / Comments / Donations.",
+		text = "Partial name → Load. Fills profile and all lists.",
 		starrable = false,
 	})
 	local searchBox = LookupTab:CreateInput({
@@ -1934,28 +2271,6 @@ do
 		end
 		return ""
 	end
-
-	LookupTab:CreateDivider({ text = "Sections" })
-	LookupTab:CreateToggle({
-		name = "Load likes",
-		value = true,
-		callback = function(v) showLikes = v and true or false end,
-	})
-	LookupTab:CreateToggle({
-		name = "Load dislikes",
-		value = true,
-		callback = function(v) showDislikes = v and true or false end,
-	})
-	LookupTab:CreateToggle({
-		name = "Load comments",
-		value = true,
-		callback = function(v) showComments = v and true or false end,
-	})
-	LookupTab:CreateToggle({
-		name = "Load donations",
-		value = true,
-		callback = function(v) showDonations = v and true or false end,
-	})
 
 	LookupTab:CreateDivider({ text = "Profile" })
 	local st = {
@@ -2071,7 +2386,7 @@ do
 	})
 
 	local function loadLikes(plr)
-		if not showLikes then
+		if false then -- always load likes
 			setDropdownOptions(likesDrop, { "(toggled off)" })
 			return
 		end
@@ -2093,7 +2408,7 @@ do
 	end
 
 	local function loadDislikes(plr)
-		if not showDislikes then
+		if false then -- always load dislikes
 			setDropdownOptions(dislikesDrop, { "(toggled off)" })
 			return
 		end
@@ -2115,7 +2430,7 @@ do
 	end
 
 	local function loadDonations(plr)
-		if not showDonations then
+		if false then -- always load donations
 			setDropdownOptions(donationsDrop, { "(toggled off)" })
 			return
 		end
@@ -2149,7 +2464,7 @@ do
 
 	local function loadComments(plr)
 		commentEntries = {}
-		if not showComments then
+		if false then -- always load comments
 			setDropdownOptions(commentsDrop, { "(toggled off)" })
 			setCtrlText(commentDetail, "Comments toggled off.")
 			return
