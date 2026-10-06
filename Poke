@@ -283,29 +283,29 @@ tab:CreateButton({
 ----------------------------------------------------------------
 -- WORLD: Warning pipeline (mix SB to 1000 → rapid equip)
 ----------------------------------------------------------------
-tab:CreateDivider({ text = "Warning" })
+tab:CreateDivider({ text = "Lagger" })
 tab:CreateText({
-	name = "Warning stages",
+	name = "Lagger stages",
 	text = "Stage 1: Auto Get+Mix ??? until Sleeping Beauty hits 1000.\nStage 2: Rapid tool equip until this toggle is off.",
 	starrable = false,
 })
 
 local WarningOn = false
-local warningStageStat = tab:CreateStat({ name = "Warning stage", value = "idle" })
+local warningStageStat = tab:CreateStat({ name = "Lagging stage", value = "idle" })
 local warningCountStat = tab:CreateStat({ name = "SB count", value = "0 / 1000" })
 
 tab:CreateToggle({
-	name = "Warning pipeline",
+	name = "lagging pipeline",
 	value = false,
 	callback = function(state)
 		WarningOn = state
 		if not state then
 			pcall(function() warningStageStat:Set("idle") end)
-			window:Notify({ title = "Warning", text = "Stopped.", icon = 127357392034684, duration = 2 })
+			window:Notify({ title = "Lagging", text = "Stopped.", icon = 127357392034684, duration = 2 })
 			return
 		end
 		pcall(function() warningStageStat:Set("mixing") end)
-		window:Notify({ title = "Warning", text = "Stage 1 — mix to 1000 SB.", icon = 127357392034684, duration = 3 })
+		window:Notify({ title = "Lagging", text = "Stage 1 — mix to 1000 SB.", icon = 127357392034684, duration = 3 })
 
 		task.spawn(function()
 			-- reuse same logic as Auto Get + Mix until count >= 1000
