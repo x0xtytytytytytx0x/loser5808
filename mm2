@@ -1,0 +1,770 @@
+
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
+local window = UILibrary:CreateWindow({ UsePremadeScripts = true })
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local function notify(title, text, duration)
+	window:Notify({
+		title = title or "MM",
+		text = text or "",
+		icon = 127357392034684,
+		duration = duration or 3,
+	})
+end
+
+----------------------------------------------------------------
+-- Highlight helpers
+----------------------------------------------------------------
+local HIGHLIGHT_FOLDER = "R8_ESP_Highlights"
+
+local function getHighlightFolder()
+	local pg = LocalPlayer:FindFirstChild("PlayerGui")
+	if not pg then return nil end
+	local f = pg:FindFirstChild(HIGHLIGHT_FOLDER)
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = HIGHLIGHT_FOLDER
+		f.Parent = pg
+	end
+	return f
+end
+
+local function clearHighlights(prefix)
+	local f = getHighlightFolder()
+	if not f then return end
+	for _, c in ipairs(f:GetChildren()) do
+		if not prefix or c.Name:sub(1, #prefix) == prefix then
+			c:Destroy()
+		end
+	end
+end
+
+local function makeHighlight(name, adornee, fill, outline, fillT, outlineT)
+	local folder = getHighlightFolder()
+	if not folder or not adornee then return nil end
+	local h = folder:FindFirstChild(name)
+	if not h then
+		h = Instance.new("Highlight")
+		h.Name = name
+		h.Parent = folder
+	end
+	h.Adornee = adornee
+	h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	h.FillColor = fill
+	h.OutlineColor = outline
+	h.FillTransparency = fillT or 0.55
+	h.OutlineTransparency = outlineT or 0
+	return h
+end
+
+local function playerIsAlive(plr)
+	if not plr then return false end
+	if plr:GetAttribute("Alive") == false then return false end
+	return true
+end
+
+local function hasToolNamed(container, name)
+	if not container then return false end
+	local lower = string.lower(name)
+	for _, t in ipairs(container:GetChildren()) do
+		if t:IsA("Tool") and string.lower(t.Name) == lower then
+			return true
+		end
+	end
+	return false
+end
+
+local function playerHasKnife(plr)
+	local bp = plr:FindFirstChildOfClass("Backpack")
+	local char = plr.Character
+	return hasToolNamed(bp, "Knife") or hasToolNamed(char, "Knife")
+end
+
+local function playerHasGun(plr)
+	local bp = plr:FindFirstChildOfClass("Backpack")
+	local char = plr.Character
+	return hasToolNamed(bp, "Gun") or hasToolNamed(char, "Gun")
+end
+
+local function getEquippedTool(plr)
+	local char = plr and plr.Character
+	return char and char:FindFirstChildOfClass("Tool")
+end
+
+local function localHasKnife()
+	return playerHasKnife(LocalPlayer)
+end
+
+local function findMurderer()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and playerIsAlive(plr) and playerHasKnife(plr) then
+			return plr
+		end
+	end
+	return nil
+end
+
+local function findSheriff()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and playerIsAlive(plr) and playerHasGun(plr) then
+			return plr
+		end
+	end
+	return nil
+end
+
+local function getHRP(plr)
+	local char = plr and plr.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getNil(name, class)
+	if typeof(getnilinstances) ~= "function" then return nil end
+	for _, v in next, getnilinstances() do
+		if v.ClassName == class and v.Name == name then
+			return v
+		end
+	end
+	return nil
+end
+
+-- Resolve Shoot remote the same way normal shots do
+local function getShootRemote()
+	local r = LocalPlayer:FindFirstChild("Shoot")
+	if r and r:IsA("RemoteEvent") then return r end
+	r = getNil("Shoot", "RemoteEvent")
+	if r then return r end
+	return nil
+end
+
+--[[
+	Normal shot args:
+	  [1] = origin CFrame (your HRP / gun look)
+	  [2] = target CFrame (usually position-only identity rotation)
+]]
+local function fireGunAt(targetHRP)
+	local myHRP = getHRP(LocalPlayer)
+	if not myHRP or not targetHRP then return false end
+
+	local remote = getShootRemote()
+	if not remote then return false end
+
+	local origin = myHRP.CFrame
+	local target = CFrame.new(targetHRP.Position) -- match captured shots
+
+	local ok = pcall(function()
+		remote:FireServer(origin, target)
+	end)
+	return ok
+end
+
+local function fireKnifeAt(targetHRP)
+	local myHRP = getHRP(LocalPlayer)
+	if not myHRP or not targetHRP then return false end
+	local knife = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Knife")
+	local ev = knife and knife:FindFirstChild("Events") and knife.Events:FindFirstChild("KnifeThrown")
+	if not ev then return false end
+	local ok = pcall(function()
+		ev:FireServer(myHRP.CFrame, CFrame.new(targetHRP.Position))
+	end)
+	return ok
+end
+
+local function equipToolNamed(name)
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+	if not hum or not bp then return end
+	local tool = bp:FindFirstChild(name)
+	if tool then pcall(function() hum:EquipTool(tool) end) end
+end
+
+----------------------------------------------------------------
+-- TAB: ESP
+----------------------------------------------------------------
+local EspTab = window:CreateTab({ name = "ESP", icon = 16149070644 })
+
+local COLOR_MURDER = Color3.fromRGB(255, 40, 40)
+local COLOR_SHERIFF = Color3.fromRGB(50, 120, 255)
+local COLOR_WHITE = Color3.fromRGB(255, 255, 255)
+local COLOR_GUNDROP = Color3.fromRGB(255, 220, 40)
+local COLOR_COIN = Color3.fromRGB(255, 255, 255)
+
+local RoleEspOn = false
+local roleEspToken = 0
+local lastMurdererName, lastSheriffName = nil, nil
+
+local function refreshRoleEsp()
+	if not RoleEspOn then return end
+	local murderer, sheriff = nil, nil
+	local showWhite = localHasKnife()
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr == LocalPlayer then
+			-- skip
+		elseif not playerIsAlive(plr) then
+			local f = getHighlightFolder()
+			if f then
+				local h = f:FindFirstChild("Role_" .. plr.UserId)
+				if h then h:Destroy() end
+			end
+		else
+			local char = plr.Character
+			if not char then
+				local f = getHighlightFolder()
+				if f then
+					local h = f:FindFirstChild("Role_" .. plr.UserId)
+					if h then h:Destroy() end
+				end
+			else
+				local isKnife = playerHasKnife(plr)
+				local isGun = playerHasGun(plr)
+				if isKnife then
+					murderer = plr
+					makeHighlight("Role_" .. plr.UserId, char, COLOR_MURDER, COLOR_MURDER, 0.45, 0)
+				elseif isGun then
+					sheriff = plr
+					makeHighlight("Role_" .. plr.UserId, char, COLOR_SHERIFF, COLOR_SHERIFF, 0.45, 0)
+				elseif showWhite then
+					makeHighlight("Role_" .. plr.UserId, char, COLOR_WHITE, COLOR_WHITE, 0.85, 0)
+				else
+					local f = getHighlightFolder()
+					if f then
+						local h = f:FindFirstChild("Role_" .. plr.UserId)
+						if h then h:Destroy() end
+					end
+				end
+			end
+		end
+	end
+
+	local mName = murderer and murderer.DisplayName or nil
+	local sName = sheriff and sheriff.DisplayName or nil
+	if mName and mName ~= lastMurdererName then
+		notify("Murderer", mName .. " has the knife.", 4)
+	end
+	if sName and sName ~= lastSheriffName then
+		notify("Sheriff", sName .. " has the gun.", 4)
+	end
+	lastMurdererName, lastSheriffName = mName, sName
+end
+
+EspTab:CreateDivider({ text = "Roles" })
+EspTab:CreateToggle({
+	name = "Show Murderer & Sheriff",
+	value = false,
+	callback = function(state)
+		RoleEspOn = state
+		roleEspToken += 1
+		local myToken = roleEspToken
+		if not state then
+			clearHighlights("Role_")
+			lastMurdererName, lastSheriffName = nil, nil
+			notify("ESP", "Role highlights off.", 2)
+			return
+		end
+		notify("ESP", "Role highlights on.", 2)
+		task.spawn(function()
+			while RoleEspOn and myToken == roleEspToken do
+				pcall(refreshRoleEsp)
+				task.wait(0.35)
+			end
+		end)
+	end,
+})
+
+local GunDropOn = false
+local gunDropToken = 0
+
+local function refreshGunDrops()
+	if not GunDropOn then return end
+	local seen = {}
+	for _, inst in ipairs(workspace:GetDescendants()) do
+		if inst.Name == "GunDrop" then
+			local adornee = inst
+			if not inst:IsA("Model") and not inst:IsA("BasePart") then
+				if inst.Parent and (inst.Parent:IsA("Model") or inst.Parent:IsA("BasePart")) then
+					adornee = inst.Parent
+				end
+			end
+			local key = "GunDrop_" .. tostring(adornee:GetDebugId())
+			seen[key] = true
+			makeHighlight(key, adornee, COLOR_GUNDROP, COLOR_GUNDROP, 0.4, 0)
+		end
+	end
+	local f = getHighlightFolder()
+	if f then
+		for _, c in ipairs(f:GetChildren()) do
+			if c.Name:sub(1, 8) == "GunDrop_" and not seen[c.Name] then
+				c:Destroy()
+			end
+		end
+	end
+end
+
+EspTab:CreateDivider({ text = "Drops" })
+EspTab:CreateToggle({
+	name = "Highlight GunDrops",
+	value = false,
+	callback = function(state)
+		GunDropOn = state
+		gunDropToken += 1
+		local myToken = gunDropToken
+		if not state then
+			clearHighlights("GunDrop_")
+			notify("ESP", "GunDrop highlights off.", 2)
+			return
+		end
+		notify("ESP", "GunDrop highlights on.", 2)
+		task.spawn(function()
+			while GunDropOn and myToken == gunDropToken do
+				pcall(refreshGunDrops)
+				task.wait(0.5)
+			end
+		end)
+	end,
+})
+
+local CoinHLOn = false
+local coinHLToken = 0
+
+local function findMainCoins()
+	local list = {}
+	for _, inst in ipairs(workspace:GetDescendants()) do
+		if inst.Name == "MainCoin" and (inst:IsA("BasePart") or inst:IsA("MeshPart")) then
+			table.insert(list, inst)
+		end
+	end
+	return list
+end
+
+local function refreshCoinHL()
+	if not CoinHLOn then return end
+	local seen = {}
+	for _, coin in ipairs(findMainCoins()) do
+		local key = "Coin_" .. tostring(coin:GetDebugId())
+		seen[key] = true
+		makeHighlight(key, coin, COLOR_COIN, Color3.fromRGB(200, 200, 220), 0.5, 0)
+	end
+	local f = getHighlightFolder()
+	if f then
+		for _, c in ipairs(f:GetChildren()) do
+			if c.Name:sub(1, 5) == "Coin_" and not seen[c.Name] then
+				c:Destroy()
+			end
+		end
+	end
+end
+
+EspTab:CreateDivider({ text = "Coins" })
+EspTab:CreateToggle({
+	name = "Highlight Coins",
+	value = false,
+	callback = function(state)
+		CoinHLOn = state
+		coinHLToken += 1
+		local myToken = coinHLToken
+		if not state then
+			clearHighlights("Coin_")
+			notify("ESP", "Coin highlights off.", 2)
+			return
+		end
+		notify("ESP", "Coin highlights on.", 2)
+		task.spawn(function()
+			while CoinHLOn and myToken == coinHLToken do
+				pcall(refreshCoinHL)
+				task.wait(0.5)
+			end
+		end)
+	end,
+})
+
+----------------------------------------------------------------
+-- TAB: Combat (keybinds — not marked bannable)
+----------------------------------------------------------------
+local CombatTab = window:CreateTab({ name = "Combat", icon = 97594928468157 })
+
+CombatTab:CreateDivider({ text = "Keybinds" })
+CombatTab:CreateText({
+	name = "Tip",
+	text = "Equip Gun/Knife first. gun is buggy.",
+	starrable = false,
+})
+
+CombatTab:CreateKeybind({
+	name = "Shoot murderer",
+	value = Enum.KeyCode.Q,
+	callback = function()
+		local tool = getEquippedTool(LocalPlayer)
+		if not tool or string.lower(tool.Name) ~= "gun" then
+			equipToolNamed("Gun")
+			task.wait(0.05)
+			tool = getEquippedTool(LocalPlayer)
+		end
+		if not tool or string.lower(tool.Name) ~= "gun" then
+			notify("Combat", "Equip the Gun first.", 2)
+			return
+		end
+		local m = findMurderer()
+		local thrp = getHRP(m)
+		if not thrp then
+			notify("Combat", "No murderer found.", 2)
+			return
+		end
+		if fireGunAt(thrp) then
+			notify("Combat", "Shot at " .. (m and m.DisplayName or "?"), 2)
+		else
+			notify("Combat", "Shoot remote missing.", 2)
+		end
+	end,
+})
+
+CombatTab:CreateKeybind({
+	name = "Throw knife at sheriff",
+	value = Enum.KeyCode.E,
+	callback = function()
+		local tool = getEquippedTool(LocalPlayer)
+		if not tool or string.lower(tool.Name) ~= "knife" then
+			equipToolNamed("Knife")
+			task.wait(0.05)
+			tool = getEquippedTool(LocalPlayer)
+		end
+		if not tool or string.lower(tool.Name) ~= "knife" then
+			notify("Combat", "Equip the Knife first.", 2)
+			return
+		end
+		local s = findSheriff()
+		local thrp = getHRP(s)
+		if not thrp then
+			local best, bestD = nil, math.huge
+			local my = getHRP(LocalPlayer)
+			if my then
+				for _, plr in ipairs(Players:GetPlayers()) do
+					if plr ~= LocalPlayer and playerIsAlive(plr) then
+						local h = getHRP(plr)
+						if h then
+							local d = (h.Position - my.Position).Magnitude
+							if d < bestD then bestD, best = d, h end
+						end
+					end
+				end
+			end
+			thrp = best
+		end
+		if not thrp then
+			notify("Combat", "No target.", 2)
+			return
+		end
+		if fireKnifeAt(thrp) then
+			notify("Combat", "Knife thrown.", 2)
+		else
+			notify("Combat", "KnifeThrown missing (equip knife).", 2)
+		end
+	end,
+})
+
+
+----------------------------------------------------------------
+-- TAB: Player Info
+----------------------------------------------------------------
+local InfoTab = window:CreateTab({ name = "Player Info", icon = 6031075938 })
+
+InfoTab:CreateDivider({ text = "Search" })
+InfoTab:CreateText({
+	name = "Tip",
+	text = "Partial name → Load. Elite / gun / knife / perk / level / prestige / XP.",
+	starrable = false,
+})
+
+local searchBox = InfoTab:CreateInput({
+	name = "Player",
+	placeholder = "partial name…",
+	value = "",
+	callback = function() end,
+})
+
+local function getSearchText()
+	if not searchBox then return "" end
+	if searchBox.Get then
+		local ok, t = pcall(function() return searchBox:Get() end)
+		if ok and t ~= nil then return tostring(t) end
+	end
+	return ""
+end
+
+local function findPlayer(q)
+	q = string.lower(tostring(q or "")):gsub("%s+", "")
+	if q == "" then return nil end
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if string.find(string.lower(plr.Name), q, 1, true)
+			or string.find(string.lower(plr.DisplayName), q, 1, true) then
+			return plr
+		end
+	end
+	return nil
+end
+
+local function attrStr(plr, name)
+	local v = plr:GetAttribute(name)
+	if v == nil then return "—" end
+	return tostring(v)
+end
+
+local st = {
+	who = InfoTab:CreateStat({ name = "Player", value = "—" }),
+	alive = InfoTab:CreateStat({ name = "Alive", value = "—" }),
+	elite = InfoTab:CreateStat({ name = "Elite", value = "—" }),
+	gun = InfoTab:CreateStat({ name = "EquipedGun", value = "—" }),
+	knife = InfoTab:CreateStat({ name = "EquiptedKnife", value = "—" }),
+	perk = InfoTab:CreateStat({ name = "EquippedPerk", value = "—" }),
+	level = InfoTab:CreateStat({ name = "Level", value = "—" }),
+	prestige = InfoTab:CreateStat({ name = "Prestige", value = "—" }),
+	xp = InfoTab:CreateStat({ name = "XP", value = "—" }),
+	role = InfoTab:CreateStat({ name = "Role guess", value = "—" }),
+}
+
+local function setStat(ctrl, text)
+	if not ctrl then return end
+	text = tostring(text or "—")
+	if ctrl.Set then pcall(function() ctrl:Set(text) end)
+	elseif ctrl.set then pcall(function() ctrl:set(text) end)
+	else pcall(function() if ctrl.Text ~= nil then ctrl.Text = text end end)
+	end
+end
+
+local function loadPlayerInfo(plr)
+	setStat(st.who, plr.DisplayName .. " (@" .. plr.Name .. ")")
+	setStat(st.alive, tostring(plr:GetAttribute("Alive")))
+	setStat(st.elite, attrStr(plr, "Elite"))
+	setStat(st.gun, attrStr(plr, "EquipedGun"))
+	setStat(st.knife, attrStr(plr, "EquiptedKnife"))
+	setStat(st.perk, attrStr(plr, "EquippedPerk"))
+	setStat(st.level, attrStr(plr, "level") ~= "—" and attrStr(plr, "level") or attrStr(plr, "Level"))
+	setStat(st.prestige, attrStr(plr, "Prestige"))
+	setStat(st.xp, attrStr(plr, "XP"))
+	local role = "Innocent"
+	if playerHasKnife(plr) then role = "Murderer"
+	elseif playerHasGun(plr) then role = "Sheriff"
+	end
+	setStat(st.role, role)
+end
+
+InfoTab:CreateButton({
+	name = "Load player",
+	buttonText = "Load",
+	callback = function()
+		local plr = findPlayer(getSearchText())
+		if not plr then
+			notify("Player Info", "No match.", 3)
+			return
+		end
+		loadPlayerInfo(plr)
+		notify("Player Info", "Loaded " .. plr.DisplayName, 2)
+	end,
+})
+
+
+----------------------------------------------------------------
+-- TAB: Bannable
+----------------------------------------------------------------
+local BanTab = window:CreateTab({ name = "Bannable", icon = 77794029995815 })
+
+BanTab:CreateText({
+	name = "⚠ WARNING",
+	text = "Coin TP / auto-kill / auto gun TP can get you banned.",
+	starrable = false,
+})
+
+BanTab:CreateDivider({ text = "Coins (BAN RISK)" })
+
+local FlyCoinOn = false
+local flyCoinToken = 0
+
+local function nearestCoin()
+	local hrp = getHRP(LocalPlayer)
+	if not hrp then return nil end
+	local best, bestDist = nil, math.huge
+	for _, coin in ipairs(findMainCoins()) do
+		local d = (coin.Position - hrp.Position).Magnitude
+		if d < bestDist then
+			bestDist = d
+			best = coin
+		end
+	end
+	return best
+end
+
+BanTab:CreateToggle({
+	name = "Slow fly to coins",
+	value = false,
+	callback = function(state)
+		FlyCoinOn = state
+		flyCoinToken += 1
+		local myToken = flyCoinToken
+		if not state then
+			notify("Bannable", "Coin fly off.", 2)
+			return
+		end
+		notify("Bannable", "⚠ Coin fly ON — ban risk.", 4)
+		task.spawn(function()
+			while FlyCoinOn and myToken == flyCoinToken do
+				local hrp = getHRP(LocalPlayer)
+				local coin = nearestCoin()
+				if hrp and coin then
+					local target = coin.Position + Vector3.new(0, 2, 0)
+					local dir = target - hrp.Position
+					local dist = dir.Magnitude
+					if dist > 2 then
+						hrp.CFrame = CFrame.new(hrp.Position + dir.Unit * math.min(dist, 6))
+					end
+				end
+				task.wait(0.08)
+			end
+		end)
+	end,
+})
+
+local TpAllCoinsOn = false
+local tpAllToken = 0
+
+BanTab:CreateToggle({
+	name = "TP all coins (until gone)",
+	value = false,
+	callback = function(state)
+		TpAllCoinsOn = state
+		tpAllToken += 1
+		local myToken = tpAllToken
+		if not state then
+			notify("Bannable", "TP-all-coins off.", 2)
+			return
+		end
+		notify("Bannable", "⚠ TP all coins ON — high ban risk.", 4)
+		task.spawn(function()
+			while TpAllCoinsOn and myToken == tpAllToken do
+				local coins = findMainCoins()
+				if #coins == 0 then
+					notify("Bannable", "No coins left.", 2)
+					TpAllCoinsOn = false
+					break
+				end
+				local hrp = getHRP(LocalPlayer)
+				local coin = nearestCoin()
+				if hrp and coin then
+					hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+				end
+				task.wait(0.15)
+			end
+		end)
+	end,
+})
+
+BanTab:CreateDivider({ text = "Gun / kill (BAN RISK)" })
+
+local AutoGunOn = false
+local autoGunToken = 0
+
+local function findGunDropPart()
+	for _, inst in ipairs(workspace:GetDescendants()) do
+		if inst.Name == "GunDrop" then
+			if inst:IsA("BasePart") then return inst end
+			if inst:IsA("Model") and inst.PrimaryPart then return inst.PrimaryPart end
+			local p = inst:FindFirstChildWhichIsA("BasePart", true)
+			if p then return p end
+		end
+	end
+	return nil
+end
+
+BanTab:CreateToggle({
+	name = "Auto TP to GunDrop",
+	value = false,
+	callback = function(state)
+		AutoGunOn = state
+		autoGunToken += 1
+		local myToken = autoGunToken
+		if not state then
+			notify("Bannable", "Auto gun TP off.", 2)
+			return
+		end
+		notify("Bannable", "⚠ Auto gun TP ON.", 3)
+		task.spawn(function()
+			while AutoGunOn and myToken == autoGunToken do
+				if not playerHasGun(LocalPlayer) then
+					local part = findGunDropPart()
+					local hrp = getHRP(LocalPlayer)
+					if part and hrp then
+						hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+					end
+				end
+				task.wait(0.25)
+			end
+		end)
+	end,
+})
+
+BanTab:CreateButton({
+	name = "TP to GunDrop once",
+	buttonText = "TP",
+	callback = function()
+		local part = findGunDropPart()
+		local hrp = getHRP(LocalPlayer)
+		if not part or not hrp then
+			notify("Bannable", "No GunDrop / no HRP.", 3)
+			return
+		end
+		hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+		notify("Bannable", "TPed to GunDrop.", 2)
+	end,
+})
+
+local AutoKillOn = false
+local autoKillToken = 0
+
+BanTab:CreateToggle({
+	name = "Auto kill (gun→murderer / knife→sheriff)",
+	value = false,
+	callback = function(state)
+		AutoKillOn = state
+		autoKillToken += 1
+		local myToken = autoKillToken
+		if not state then
+			notify("Bannable", "Auto kill off.", 2)
+			return
+		end
+		notify("Bannable", "⚠ Auto kill ON — very high ban risk.", 4)
+		task.spawn(function()
+			while AutoKillOn and myToken == autoKillToken do
+				local myHRP = getHRP(LocalPlayer)
+				if myHRP then
+					if playerHasGun(LocalPlayer) then
+						local m = findMurderer()
+						local thrp = getHRP(m)
+						if thrp then
+							myHRP.CFrame = CFrame.new(thrp.Position + Vector3.new(0, 0, 4))
+							task.wait(0.05)
+							equipToolNamed("Gun")
+							fireGunAt(thrp)
+						end
+					elseif playerHasKnife(LocalPlayer) then
+						local s = findSheriff()
+						local thrp = getHRP(s)
+						if thrp then
+							myHRP.CFrame = CFrame.new(thrp.Position + Vector3.new(0, 0, 3))
+							task.wait(0.05)
+							equipToolNamed("Knife")
+							fireKnifeAt(thrp)
+						end
+					end
+				end
+				task.wait(0.2)
+			end
+		end)
+	end,
+})
+
+window:CreateSettingsTab()
+window:CreateOwnerTab()
