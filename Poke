@@ -1,6 +1,6 @@
 
 local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
-local window = UILibrary:CreateWindow({UsePremadeScripts = true})
+local window = UILibrary:CreateWindow({UsePremadeScripts = true, skipFakeLoading = true})
 local tab = window:CreateTab({
 	name = "World",
 	icon = 11395780588,
@@ -227,6 +227,159 @@ tab:CreateToggle({
             end)
         end
     end,
+})
+
+----------------------------------------------------------------
+-- LOCAL likes / dislikes notifications
+----------------------------------------------------------------
+local LikeWatchOn = false
+local likeWatchToken = 0
+
+local function resolveUserId(id)
+	id = tonumber(id)
+	if not id then return "?" end
+	local ok, name = pcall(function()
+		return Players:GetNameFromUserIdAsync(id)
+	end)
+	if ok and type(name) == "string" and name ~= "" then
+		return name
+	end
+	return "User " .. tostring(id)
+end
+
+local function collectLikeIds(folder)
+	local list, seen = {}, {}
+	if not folder then return list end
+
+	-- children ValueBases / attributes / numbered entries
+	for _, c in ipairs(folder:GetChildren()) do
+		local id = nil
+		if c:IsA("ValueBase") then
+			id = tonumber(c.Value)
+		else
+			id = tonumber(c.Name) or tonumber(c:GetAttribute("Value")) or tonumber(c:GetAttribute("UserId"))
+		end
+		if id and id > 0 and not seen[id] then
+			seen[id] = true
+			table.insert(list, id)
+		end
+	end
+	for attr, aval in pairs(folder:GetAttributes()) do
+		local id = tonumber(aval)
+		if id and id > 0 and not seen[id] then
+			seen[id] = true
+			table.insert(list, id)
+		end
+	end
+	table.sort(list)
+	return list
+end
+
+local function idSet(list)
+	local s = {}
+	for _, id in ipairs(list) do s[id] = true end
+	return s
+end
+
+local function getLocalLikeFolders()
+	local profile = player:FindFirstChild("Profile")
+	local hist = profile and profile:FindFirstChild("History")
+	local ld = hist and hist:FindFirstChild("LikesDislikes")
+	if not ld then return nil, nil end
+	local likes = ld:FindFirstChild("Likes")
+	local dislikes = ld:FindFirstChild("Dislikes")
+	local likesIds = likes and likes:FindFirstChild("IDs")
+	local dislikesIds = dislikes and dislikes:FindFirstChild("IDs")
+	return likesIds, dislikesIds
+end
+
+tab:CreateToggle({
+	name = "Like / Dislike alerts",
+	value = false,
+	callback = function(state)
+		LikeWatchOn = state
+		likeWatchToken += 1
+		local myToken = likeWatchToken
+
+		if not state then
+			window:Notify({
+				title = "R8//TW0",
+				text = "Like / dislike alerts off.",
+				icon = 127357392034684,
+				duration = 2,
+			})
+			return
+		end
+
+		window:Notify({
+			title = "R8//TW0",
+			text = "Watching who likes / dislikes you.",
+			icon = 127357392034684,
+			duration = 3,
+		})
+
+		task.spawn(function()
+			local prevLikes, prevDislikes = {}, {}
+			local primed = false
+
+			while LikeWatchOn and myToken == likeWatchToken do
+				local likesFolder, dislikesFolder = getLocalLikeFolders()
+				local curLikes = collectLikeIds(likesFolder)
+				local curDislikes = collectLikeIds(dislikesFolder)
+
+				if primed then
+					local wasL, nowL = idSet(prevLikes), idSet(curLikes)
+					local wasD, nowD = idSet(prevDislikes), idSet(curDislikes)
+
+					for id in pairs(nowL) do
+						if not wasL[id] then
+							window:Notify({
+								title = "Liked",
+								text = resolveUserId(id) .. " liked you.",
+								icon = 127357392034684,
+								duration = 4,
+							})
+						end
+					end
+					for id in pairs(wasL) do
+						if not nowL[id] then
+							window:Notify({
+								title = "Like removed",
+								text = resolveUserId(id) .. " removed their like.",
+								icon = 127357392034684,
+								duration = 4,
+							})
+						end
+					end
+					for id in pairs(nowD) do
+						if not wasD[id] then
+							window:Notify({
+								title = "Disliked",
+								text = resolveUserId(id) .. " disliked you.",
+								icon = 127357392034684,
+								duration = 4,
+							})
+						end
+					end
+					for id in pairs(wasD) do
+						if not nowD[id] then
+							window:Notify({
+								title = "Dislike removed",
+								text = resolveUserId(id) .. " removed their dislike.",
+								icon = 127357392034684,
+								duration = 4,
+							})
+						end
+					end
+				else
+					primed = true -- first snapshot only; no spam of current list
+				end
+
+				prevLikes, prevDislikes = curLikes, curDislikes
+				task.wait(0.5)
+			end
+		end)
+	end,
 })
 
 tab:CreateButton({
