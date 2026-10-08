@@ -9,6 +9,14 @@
       "verified": false
     },
     {
+      "name": "Murder Mystery 2",
+      "placeId": 142823291,
+      "imageId": 950034311,
+      "description": "Basic esp, teleports and coin collection.",
+      "scriptUrl": "https://raw.githubusercontent.com/x0xtytytytytytx0x/loser5808/refs/heads/main/mm2",
+      "verified": false
+    },
+    {
       "name": "juangamer62",
       "placeId": 119048529960596,
       "imageId": 6319951708,
