@@ -1,6 +1,6 @@
 
 local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
-local window = UILibrary:CreateWindow({ UsePremadeScripts = true })
+local window = UILibrary:CreateWindow({ UsePremadeScripts = true, skipFakeLoading = true})
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -336,7 +336,10 @@ local function findMainCoins()
 	local list = {}
 	for _, inst in ipairs(workspace:GetDescendants()) do
 		if inst.Name == "MainCoin" and (inst:IsA("BasePart") or inst:IsA("MeshPart")) then
-			table.insert(list, inst)
+			-- must be fully visible
+			if (inst.Transparency or 0) <= 0.05 then
+				table.insert(list, inst)
+			end
 		end
 	end
 	return list
@@ -644,19 +647,50 @@ BanTab:CreateToggle({
 		end
 		notify("Bannable", "⚠ TP all coins ON — high ban risk.", 4)
 		task.spawn(function()
+			local lastTarget = nil
 			while TpAllCoinsOn and myToken == tpAllToken do
-				local coins = findMainCoins()
+				local coins = findMainCoins() -- only Transparency ~ 0
 				if #coins == 0 then
-					notify("Bannable", "No coins left.", 2)
+					notify("Bannable", "No visible coins left.", 2)
 					TpAllCoinsOn = false
 					break
 				end
+
 				local hrp = getHRP(LocalPlayer)
-				local coin = nearestCoin()
-				if hrp and coin then
-					hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+				if not hrp then
+					task.wait(0.2)
+					continue -- Luau: use else path if needed
 				end
-				task.wait(0.15)
+
+				-- pick nearest that isn't the one we just sat on (if still listed)
+				local best, bestDist = nil, math.huge
+				for _, coin in ipairs(coins) do
+					if coin ~= lastTarget and coin.Parent then
+						local d = (coin.Position - hrp.Position).Magnitude
+						if d < bestDist then
+							bestDist = d
+							best = coin
+						end
+					end
+				end
+				-- if only lastTarget left, use it
+				if not best then
+					best = coins[1]
+				end
+
+				if best and best.Parent and (best.Transparency or 0) <= 0.05 then
+					hrp.CFrame = CFrame.new(best.Position + Vector3.new(0, 3, 0))
+					lastTarget = best
+					-- wait until this coin disappears / goes transparent, or timeout
+					local t0 = os.clock()
+					while TpAllCoinsOn and myToken == tpAllToken do
+						if not best.Parent then break end
+						if (best.Transparency or 0) > 0.05 then break end
+						if os.clock() - t0 > 2.5 then break end -- stuck → next
+						task.wait(0.1)
+					end
+				end
+				task.wait(0.08)
 			end
 		end)
 	end,
