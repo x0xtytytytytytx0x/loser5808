@@ -2073,7 +2073,7 @@ local farmToken = 0
 local conns = {}
 local locking = false
 local rebindQueued = false
-local REBIND_WAIT = 0.3
+local REBIND_WAIT = 1
 local farmDidTp = false
 
 local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
@@ -2283,8 +2283,9 @@ local function refreshRod()
 	if not rod then return false end
 
 	-- unequip
+    task.wait(1)
 	pcall(function() humanoid:UnequipTools() end)
-	task.wait(1)
+	task.wait(0.5)
 
 	-- equip again (may have moved to backpack)
 	rod = findRod()
