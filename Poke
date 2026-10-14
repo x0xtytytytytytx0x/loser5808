@@ -2069,16 +2069,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local autoFishOn = false
 local farmOn = false
-local fishToken = 0
 local farmToken = 0
 local conns = {}
 local locking = false
 local rebindQueued = false
 local REBIND_WAIT = 0.3
+local farmDidTp = false
 
 local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
 local TP_POS = Vector3.new(102, -1, 470)
-local CAST_TIMEOUT = 300 -- 5 minutes
+local CAST_TIMEOUT = 300
 
 local cur = { main = nil, slider = nil, inner = nil }
 
@@ -2121,8 +2121,6 @@ local function findBar()
 end
 
 local function fishGuiOpen()
-	local _, _, fg = findBar()
-	if fg then return true end
 	local pg = player:FindFirstChild("PlayerGui")
 	return pg and pg:FindFirstChild("FishGame") ~= nil
 end
@@ -2224,14 +2222,10 @@ bindBar = function()
 		if not parent then scheduleRebind() end
 	end))
 	table.insert(conns, cur.main.ChildAdded:Connect(function(ch)
-		if ch.Name == "InnerFrame" or ch.Name == "Slider" then
-			scheduleRebind()
-		end
+		if ch.Name == "InnerFrame" or ch.Name == "Slider" then scheduleRebind() end
 	end))
 	table.insert(conns, cur.main.ChildRemoved:Connect(function(ch)
-		if ch.Name == "InnerFrame" or ch.Name == "Slider" then
-			scheduleRebind()
-		end
+		if ch.Name == "InnerFrame" or ch.Name == "Slider" then scheduleRebind() end
 	end))
 
 	if ag then
@@ -2259,11 +2253,60 @@ local function startLockPoll()
 	end)
 end
 
-local function tpToSpot()
+local function findRod()
+	local char = player.Character
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if char then
+		for _, t in ipairs(char:GetChildren()) do
+			if t:IsA("Tool") and string.find(t.Name, "Rod", 1, true) then
+				return t
+			end
+		end
+	end
+	if backpack then
+		for _, t in ipairs(backpack:GetChildren()) do
+			if t:IsA("Tool") and string.find(t.Name, "Rod", 1, true) then
+				return t
+			end
+		end
+	end
+	return nil
+end
+
+local function refreshRod()
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not humanoid or not backpack then return false end
+
+	local rod = findRod()
+	if not rod then return false end
+
+	-- unequip
+	pcall(function() humanoid:UnequipTools() end)
+	task.wait(0.3)
+
+	-- equip again (may have moved to backpack)
+	rod = findRod()
+	if rod and rod.Parent == backpack then
+		pcall(function() humanoid:EquipTool(rod) end)
+	elseif rod and rod.Parent == char then
+		-- already on character after unequip failed edge case
+		pcall(function() humanoid:EquipTool(rod) end)
+	else
+		return false
+	end
+	task.wait(0.15)
+	return true
+end
+
+local function tpToSpotOnce()
+	if farmDidTp then return end
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if hrp then
 		hrp.CFrame = CFrame.new(TP_POS)
+		farmDidTp = true
 	end
 end
 
@@ -2271,10 +2314,9 @@ local function castLine()
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	local toolAction = remotes and remotes:FindFirstChild("ToolAction")
 	if not toolAction then return false end
-	local ok = pcall(function()
+	return pcall(function()
 		toolAction:FireServer("CastLine", { Position = CAST_POS }, 1)
 	end)
-	return ok
 end
 
 Games:CreateSlider({
@@ -2293,7 +2335,6 @@ Games:CreateToggle({
 	value = false,
 	callback = function(state)
 		autoFishOn = state
-		fishToken += 1
 		if not state then
 			if not farmOn then clearConns() end
 			notify("Fish", "Auto Fish off")
@@ -2314,26 +2355,28 @@ Games:CreateToggle({
 		local myToken = farmToken
 
 		if not state then
+			farmDidTp = false
 			if not autoFishOn then clearConns() end
 			notify("Fish", "Farm off")
 			return
 		end
 
-		notify("Fish", "Farm on — TP + CastLine loop")
+		farmDidTp = false
+		notify("Fish", "Farm on")
 		startLockPoll()
 
 		task.spawn(function()
-			while farmOn and myToken == farmToken do
-				-- 1) TP
-				tpToSpot()
-				task.wait(0.35)
+			-- TP only once per farm session
+			tpToSpotOnce()
+			task.wait(0.35)
 
-				-- 2) Cast
+			while farmOn and myToken == farmToken do
+				-- unequip → wait → equip rod → cast
+				refreshRod()
 				castLine()
 				local castAt = os.clock()
-				notify("Fish", "CastLine — waiting for FishGame…", 2)
+				notify("Fish", "CastLine — waiting…", 2)
 
-				-- 3) Wait for GUI (or 5 min timeout → recast)
 				local sawGui = false
 				while farmOn and myToken == farmToken do
 					if fishGuiOpen() or findBar() then
@@ -2341,7 +2384,7 @@ Games:CreateToggle({
 						break
 					end
 					if os.clock() - castAt >= CAST_TIMEOUT then
-						notify("Fish", "No bite 5m — casting again", 2)
+						notify("Fish", "No bite 5m — recast", 2)
 						break
 					end
 					task.wait(0.2)
@@ -2349,19 +2392,14 @@ Games:CreateToggle({
 
 				if not farmOn or myToken ~= farmToken then break end
 				if not sawGui then
-					-- timeout path → loop casts again
 					continue
 				end
 
-				-- 4) Catch: bind force lock while GUI is up
 				bindBar()
-				notify("Fish", "FishGame up — locking", 1)
-
 				while farmOn and myToken == farmToken do
 					if not fishGuiOpen() and not findBar() then
-						break -- GUI gone → cast again
+						break
 					end
-					-- keep lock alive
 					if not instancesLive() then
 						local bar = findBar()
 						if bar then bindBar() end
@@ -2371,12 +2409,11 @@ Games:CreateToggle({
 
 				if not farmOn or myToken ~= farmToken then break end
 				clearConns()
-				task.wait(0.25) -- brief pause before next cast
+				task.wait(0.25)
 			end
 		end)
 	end,
 })
-
 
 
 ----------------------------------------------------------------
