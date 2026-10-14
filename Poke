@@ -2058,53 +2058,29 @@ Games:CreateToggle({
 	end,
 })
 
-Games:CreateDivider({ text = "Boxing" })
-
-local AutoAttack = false
-Games:CreateToggle({
-	name = "Auto Attack",
-	value = false,
-	verified = false,
-	callback = function(value)
-		AutoAttack = value
-		if value then
-			task.spawn(function()
-				while AutoAttack do
-game:GetService("ReplicatedStorage").Remotes.ClientToServer:FireServer("Attack","Punch")
-					task.wait(0)
-				end
-			end)
-		else
-
-		end
-	end,
-})
-
 
 ----------------------------------------------------------------
--- GAMES: Auto Fish (rebind when InnerFrame/Slider is recreated)
+-- GAMES: Auto Fish + Farm
 ----------------------------------------------------------------
 Games:CreateDivider({ text = "Fishing" })
 
-Games:CreateText({
-	name = "Auto Fish info",
-	text = "Force-locks Slider to InnerFrame. If InnerFrame/Slider is destroyed and remade, fully resets lock (off→on) onto the new instances.",
-	starrable = false,
-})
-
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local autoFishOn = false
+local farmOn = false
+local fishToken = 0
+local farmToken = 0
 local conns = {}
 local locking = false
 local rebindQueued = false
+local REBIND_WAIT = 0.3
 
--- currently locked instances
-local cur = {
-	main = nil,
-	slider = nil,
-	inner = nil,
-}
+local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
+local TP_POS = Vector3.new(102, -1, 470)
+local CAST_TIMEOUT = 300 -- 5 minutes
+
+local cur = { main = nil, slider = nil, inner = nil }
 
 local function notify(title, text, duration)
 	window:Notify({
@@ -2123,27 +2099,32 @@ local function clearConns()
 	cur.main, cur.slider, cur.inner = nil, nil, nil
 end
 
+local function lockActive()
+	return autoFishOn or farmOn
+end
+
 local function findBar()
 	local pg = player:FindFirstChild("PlayerGui")
 	local fg = pg and pg:FindFirstChild("FishGame")
 	local ag = fg and fg:FindFirstChild("ActiveGames")
-	if not ag then return nil, ag end
-
+	if not ag then return nil, ag, fg end
 	for _, g in ipairs(ag:GetChildren()) do
 		local main = g:FindFirstChild("MainBar")
 		if not main then continue end
 		local slider = main:FindFirstChild("Slider")
 		local inner = main:FindFirstChild("InnerFrame")
 		if slider and inner then
-			return {
-				name = g.Name,
-				main = main,
-				slider = slider,
-				inner = inner,
-			}, ag
+			return { name = g.Name, main = main, slider = slider, inner = inner }, ag, fg
 		end
 	end
-	return nil, ag
+	return nil, ag, fg
+end
+
+local function fishGuiOpen()
+	local _, _, fg = findBar()
+	if fg then return true end
+	local pg = player:FindFirstChild("PlayerGui")
+	return pg and pg:FindFirstChild("FishGame") ~= nil
 end
 
 local function forceInside(slider, inner, main)
@@ -2179,16 +2160,16 @@ local function forceInside(slider, inner, main)
 	locking = false
 end
 
-local bindBar -- forward
+local bindBar
 
 local function scheduleRebind()
-	if not autoFishOn or rebindQueued then return end
+	if not lockActive() or rebindQueued then return end
 	rebindQueued = true
 	task.spawn(function()
-		clearConns() -- full off
-		task.wait(0.06)
-		if autoFishOn then
-			bindBar() -- full on, fresh instances
+		clearConns()
+		task.wait(REBIND_WAIT)
+		if lockActive() then
+			bindBar()
 		end
 		rebindQueued = false
 	end)
@@ -2210,13 +2191,11 @@ bindBar = function()
 	cur.inner = bar.inner
 
 	local function tick()
-		if not autoFishOn then return end
-		-- destroyed / replaced?
+		if not lockActive() then return end
 		if not instancesLive() then
 			scheduleRebind()
 			return
 		end
-		-- MainBar got a *different* InnerFrame or Slider child?
 		local s2 = cur.main:FindFirstChild("Slider")
 		local i2 = cur.main:FindFirstChild("InnerFrame")
 		if s2 ~= cur.slider or i2 ~= cur.inner then
@@ -2233,23 +2212,17 @@ bindBar = function()
 	table.insert(conns, RunService.Heartbeat:Connect(tick))
 
 	table.insert(conns, cur.slider:GetPropertyChangedSignal("Position"):Connect(function()
-		if not autoFishOn or locking then return end
-		if not instancesLive() then
-			scheduleRebind()
-			return
-		end
+		if not lockActive() or locking then return end
+		if not instancesLive() then scheduleRebind() return end
 		forceInside(cur.slider, cur.inner, cur.main)
 	end))
 
-	-- if THIS inner is removed from tree
 	table.insert(conns, cur.inner.AncestryChanged:Connect(function(_, parent)
 		if not parent then scheduleRebind() end
 	end))
 	table.insert(conns, cur.slider.AncestryChanged:Connect(function(_, parent)
 		if not parent then scheduleRebind() end
 	end))
-
-	-- new InnerFrame/Slider parented under MainBar
 	table.insert(conns, cur.main.ChildAdded:Connect(function(ch)
 		if ch.Name == "InnerFrame" or ch.Name == "Slider" then
 			scheduleRebind()
@@ -2262,47 +2235,143 @@ bindBar = function()
 	end))
 
 	if ag then
-		table.insert(conns, ag.ChildAdded:Connect(function()
-			scheduleRebind()
-		end))
-		table.insert(conns, ag.ChildRemoved:Connect(function()
-			scheduleRebind()
-		end))
+		table.insert(conns, ag.ChildAdded:Connect(function() scheduleRebind() end))
+		table.insert(conns, ag.ChildRemoved:Connect(function() scheduleRebind() end))
 	end
 
 	forceInside(cur.slider, cur.inner, cur.main)
 	return true
 end
 
+local function startLockPoll()
+	task.spawn(function()
+		while lockActive() do
+			local bar = findBar()
+			if bar and (not instancesLive() or bar.slider ~= cur.slider or bar.inner ~= cur.inner) then
+				scheduleRebind()
+			elseif not bar and instancesLive() then
+				clearConns()
+			elseif bar and not instancesLive() then
+				bindBar()
+			end
+			task.wait(0.1)
+		end
+	end)
+end
+
+local function tpToSpot()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		hrp.CFrame = CFrame.new(TP_POS)
+	end
+end
+
+local function castLine()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local toolAction = remotes and remotes:FindFirstChild("ToolAction")
+	if not toolAction then return false end
+	local ok = pcall(function()
+		toolAction:FireServer("CastLine", { Position = CAST_POS }, 1)
+	end)
+	return ok
+end
+
+Games:CreateSlider({
+	name = "Rebind wait",
+	range = { 0.05, 2 },
+	increment = 0.05,
+	value = REBIND_WAIT,
+	suffix = "s",
+	callback = function(v)
+		REBIND_WAIT = v
+	end,
+})
+
 Games:CreateToggle({
 	name = "Auto Fish",
 	value = false,
 	callback = function(state)
 		autoFishOn = state
+		fishToken += 1
+		if not state then
+			if not farmOn then clearConns() end
+			notify("Fish", "Auto Fish off")
+			return
+		end
+		notify("Fish", "Auto Fish on")
+		bindBar()
+		startLockPoll()
+	end,
+})
+
+Games:CreateToggle({
+	name = "Auto Fish Farm (TP + Cast)",
+	value = false,
+	callback = function(state)
+		farmOn = state
+		farmToken += 1
+		local myToken = farmToken
 
 		if not state then
-			clearConns()
-			notify("Fish", "Off")
+			if not autoFishOn then clearConns() end
+			notify("Fish", "Farm off")
 			return
 		end
 
-		notify("Fish", "On — rebind when InnerFrame/Slider remade")
-		bindBar()
+		notify("Fish", "Farm on — TP + CastLine loop")
+		startLockPoll()
 
-		-- backup poll: new instances even if signals miss
 		task.spawn(function()
-			while autoFishOn do
-				local bar = findBar()
-				if not bar then
-					-- waiting for next catch
-				elseif not instancesLive()
-					or bar.slider ~= cur.slider
-					or bar.inner ~= cur.inner
-					or bar.main ~= cur.main
-				then
-					scheduleRebind()
+			while farmOn and myToken == farmToken do
+				-- 1) TP
+				tpToSpot()
+				task.wait(0.35)
+
+				-- 2) Cast
+				castLine()
+				local castAt = os.clock()
+				notify("Fish", "CastLine — waiting for FishGame…", 2)
+
+				-- 3) Wait for GUI (or 5 min timeout → recast)
+				local sawGui = false
+				while farmOn and myToken == farmToken do
+					if fishGuiOpen() or findBar() then
+						sawGui = true
+						break
+					end
+					if os.clock() - castAt >= CAST_TIMEOUT then
+						notify("Fish", "No bite 5m — casting again", 2)
+						break
+					end
+					task.wait(0.2)
 				end
-				task.wait(0.1)
+
+				if not farmOn or myToken ~= farmToken then break end
+				if not sawGui then
+					-- timeout path → loop casts again
+					continue
+				end
+
+				-- 4) Catch: bind force lock while GUI is up
+				bindBar()
+				notify("Fish", "FishGame up — locking", 1)
+
+				while farmOn and myToken == farmToken do
+					if not fishGuiOpen() and not findBar() then
+						break -- GUI gone → cast again
+					end
+					-- keep lock alive
+					if not instancesLive() then
+						local bar = findBar()
+						if bar then bindBar() end
+					end
+					task.wait(0.15)
+				end
+
+				if not farmOn or myToken ~= farmToken then break end
+				clearConns()
+				task.wait(0.25) -- brief pause before next cast
 			end
 		end)
 	end,
