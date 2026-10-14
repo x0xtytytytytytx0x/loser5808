@@ -2077,6 +2077,24 @@ local REBIND_WAIT = 1
 local farmDidTp = false
 
 local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
+local TP_POS = Vector3.new(102, -1, 470)----------------------------------------------------------------
+-- GAMES: Auto Fish + Farm
+----------------------------------------------------------------
+Games:CreateDivider({ text = "Fishing" })
+
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local autoFishOn = false
+local farmOn = false
+local farmToken = 0
+local conns = {}
+local locking = false
+local rebindQueued = false
+local REBIND_WAIT = 1
+local farmDidTp = false
+
+local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
 local TP_POS = Vector3.new(102, -1, 470)
 local CAST_TIMEOUT = 300
 
@@ -2246,7 +2264,7 @@ local function startLockPoll()
 			elseif not bar and instancesLive() then
 				clearConns()
 			elseif bar and not instancesLive() then
-				bindBar()
+				scheduleRebind()
 			end
 			task.wait(0.1)
 		end
@@ -2282,17 +2300,14 @@ local function refreshRod()
 	local rod = findRod()
 	if not rod then return false end
 
-	-- unequip
-    task.wait(1)
+	task.wait(1)
 	pcall(function() humanoid:UnequipTools() end)
 	task.wait(0.5)
 
-	-- equip again (may have moved to backpack)
 	rod = findRod()
 	if rod and rod.Parent == backpack then
 		pcall(function() humanoid:EquipTool(rod) end)
 	elseif rod and rod.Parent == char then
-		-- already on character after unequip failed edge case
 		pcall(function() humanoid:EquipTool(rod) end)
 	else
 		return false
@@ -2316,7 +2331,7 @@ local function castLine()
 	local toolAction = remotes and remotes:FindFirstChild("ToolAction")
 	if not toolAction then return false end
 	return pcall(function()
-    task.wait(0.5)
+		task.wait(0.5)
 		toolAction:FireServer("CastLine", { Position = CAST_POS }, 1)
 	end)
 end
@@ -2343,7 +2358,7 @@ Games:CreateToggle({
 			return
 		end
 		notify("Fish", "Auto Fish on")
-		bindBar()
+		scheduleRebind()
 		startLockPoll()
 	end,
 })
@@ -2368,12 +2383,10 @@ Games:CreateToggle({
 		startLockPoll()
 
 		task.spawn(function()
-			-- TP only once per farm session
 			tpToSpotOnce()
 			task.wait(0.35)
 
 			while farmOn and myToken == farmToken do
-				-- unequip → wait → equip rod → cast
 				refreshRod()
 				castLine()
 				local castAt = os.clock()
@@ -2397,26 +2410,29 @@ Games:CreateToggle({
 					continue
 				end
 
+				-- rebind wait before force lock
+				clearConns()
+				task.wait(REBIND_WAIT)
+				if not farmOn or myToken ~= farmToken then break end
 				bindBar()
+
 				while farmOn and myToken == farmToken do
 					if not fishGuiOpen() and not findBar() then
 						break
 					end
 					if not instancesLive() then
-						local bar = findBar()
-						if bar then bindBar() end
+						scheduleRebind()
 					end
 					task.wait(0.15)
 				end
 
 				if not farmOn or myToken ~= farmToken then break end
 				clearConns()
-				task.wait(0.25)
+				task.wait(REBIND_WAIT)
 			end
 		end)
 	end,
 })
-
 
 ----------------------------------------------------------------
 -- PLAYER LOOKUP (single tab + toggles, no extra tabs)
