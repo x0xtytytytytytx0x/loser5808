@@ -229,159 +229,6 @@ tab:CreateToggle({
     end,
 })
 
-----------------------------------------------------------------
--- LOCAL likes / dislikes notifications
-----------------------------------------------------------------
-local LikeWatchOn = false
-local likeWatchToken = 0
-
-local function resolveUserId(id)
-	id = tonumber(id)
-	if not id then return "?" end
-	local ok, name = pcall(function()
-		return Players:GetNameFromUserIdAsync(id)
-	end)
-	if ok and type(name) == "string" and name ~= "" then
-		return name
-	end
-	return "User " .. tostring(id)
-end
-
-local function collectLikeIds(folder)
-	local list, seen = {}, {}
-	if not folder then return list end
-
-	-- children ValueBases / attributes / numbered entries
-	for _, c in ipairs(folder:GetChildren()) do
-		local id = nil
-		if c:IsA("ValueBase") then
-			id = tonumber(c.Value)
-		else
-			id = tonumber(c.Name) or tonumber(c:GetAttribute("Value")) or tonumber(c:GetAttribute("UserId"))
-		end
-		if id and id > 0 and not seen[id] then
-			seen[id] = true
-			table.insert(list, id)
-		end
-	end
-	for attr, aval in pairs(folder:GetAttributes()) do
-		local id = tonumber(aval)
-		if id and id > 0 and not seen[id] then
-			seen[id] = true
-			table.insert(list, id)
-		end
-	end
-	table.sort(list)
-	return list
-end
-
-local function idSet(list)
-	local s = {}
-	for _, id in ipairs(list) do s[id] = true end
-	return s
-end
-
-local function getLocalLikeFolders()
-	local profile = player:FindFirstChild("Profile")
-	local hist = profile and profile:FindFirstChild("History")
-	local ld = hist and hist:FindFirstChild("LikesDislikes")
-	if not ld then return nil, nil end
-	local likes = ld:FindFirstChild("Likes")
-	local dislikes = ld:FindFirstChild("Dislikes")
-	local likesIds = likes and likes:FindFirstChild("IDs")
-	local dislikesIds = dislikes and dislikes:FindFirstChild("IDs")
-	return likesIds, dislikesIds
-end
-
-tab:CreateToggle({
-	name = "Like / Dislike alerts",
-	value = false,
-	callback = function(state)
-		LikeWatchOn = state
-		likeWatchToken += 1
-		local myToken = likeWatchToken
-
-		if not state then
-			window:Notify({
-				title = "R8//TW0",
-				text = "Like / dislike alerts off.",
-				icon = 127357392034684,
-				duration = 2,
-			})
-			return
-		end
-
-		window:Notify({
-			title = "R8//TW0",
-			text = "Watching who likes / dislikes you.",
-			icon = 127357392034684,
-			duration = 3,
-		})
-
-		task.spawn(function()
-			local prevLikes, prevDislikes = {}, {}
-			local primed = false
-
-			while LikeWatchOn and myToken == likeWatchToken do
-				local likesFolder, dislikesFolder = getLocalLikeFolders()
-				local curLikes = collectLikeIds(likesFolder)
-				local curDislikes = collectLikeIds(dislikesFolder)
-
-				if primed then
-					local wasL, nowL = idSet(prevLikes), idSet(curLikes)
-					local wasD, nowD = idSet(prevDislikes), idSet(curDislikes)
-
-					for id in pairs(nowL) do
-						if not wasL[id] then
-							window:Notify({
-								title = "Liked",
-								text = resolveUserId(id) .. " liked you.",
-								icon = 127357392034684,
-								duration = 4,
-							})
-						end
-					end
-					for id in pairs(wasL) do
-						if not nowL[id] then
-							window:Notify({
-								title = "Like removed",
-								text = resolveUserId(id) .. " removed their like.",
-								icon = 127357392034684,
-								duration = 4,
-							})
-						end
-					end
-					for id in pairs(nowD) do
-						if not wasD[id] then
-							window:Notify({
-								title = "Disliked",
-								text = resolveUserId(id) .. " disliked you.",
-								icon = 127357392034684,
-								duration = 4,
-							})
-						end
-					end
-					for id in pairs(wasD) do
-						if not nowD[id] then
-							window:Notify({
-								title = "Dislike removed",
-								text = resolveUserId(id) .. " removed their dislike.",
-								icon = 127357392034684,
-								duration = 4,
-							})
-						end
-					end
-				else
-					primed = true -- first snapshot only; no spam of current list
-				end
-
-				prevLikes, prevDislikes = curLikes, curDislikes
-				task.wait(0.5)
-			end
-		end)
-	end,
-})
-
 tab:CreateButton({
 	name = "Remove barriers",
 	verified = false,
@@ -2234,7 +2081,232 @@ game:GetService("ReplicatedStorage").Remotes.ClientToServer:FireServer("Attack",
 })
 
 
+----------------------------------------------------------------
+-- GAMES: Auto Fish (rebind when InnerFrame/Slider is recreated)
+----------------------------------------------------------------
+Games:CreateDivider({ text = "Fishing" })
 
+Games:CreateText({
+	name = "Auto Fish info",
+	text = "Force-locks Slider to InnerFrame. If InnerFrame/Slider is destroyed and remade, fully resets lock (off→on) onto the new instances.",
+	starrable = false,
+})
+
+local RunService = game:GetService("RunService")
+
+local autoFishOn = false
+local conns = {}
+local locking = false
+local rebindQueued = false
+
+-- currently locked instances
+local cur = {
+	main = nil,
+	slider = nil,
+	inner = nil,
+}
+
+local function notify(title, text, duration)
+	window:Notify({
+		title = title or "Fish",
+		text = text or "",
+		icon = 127357392034684,
+		duration = duration or 2,
+	})
+end
+
+local function clearConns()
+	for _, c in ipairs(conns) do
+		pcall(function() c:Disconnect() end)
+	end
+	table.clear(conns)
+	cur.main, cur.slider, cur.inner = nil, nil, nil
+end
+
+local function findBar()
+	local pg = player:FindFirstChild("PlayerGui")
+	local fg = pg and pg:FindFirstChild("FishGame")
+	local ag = fg and fg:FindFirstChild("ActiveGames")
+	if not ag then return nil, ag end
+
+	for _, g in ipairs(ag:GetChildren()) do
+		local main = g:FindFirstChild("MainBar")
+		if not main then continue end
+		local slider = main:FindFirstChild("Slider")
+		local inner = main:FindFirstChild("InnerFrame")
+		if slider and inner then
+			return {
+				name = g.Name,
+				main = main,
+				slider = slider,
+				inner = inner,
+			}, ag
+		end
+	end
+	return nil, ag
+end
+
+local function forceInside(slider, inner, main)
+	if locking then return end
+	if not slider or not inner or not main then return end
+	if not slider.Parent or not inner.Parent or not main.Parent then return end
+
+	locking = true
+	pcall(function()
+		local mainAbs = main.AbsolutePosition
+		local mainSize = main.AbsoluteSize
+		if mainSize.X < 1 then return end
+
+		local iAbs = inner.AbsolutePosition
+		local iSize = inner.AbsoluteSize
+		local sSize = slider.AbsoluteSize
+
+		local targetAbsX = iAbs.X + iSize.X * 0.5 - sSize.X * 0.5
+		local targetAbsY = iAbs.Y + iSize.Y * 0.5 - sSize.Y * 0.5
+		local relX = (targetAbsX - mainAbs.X) / mainSize.X
+		local relY = (targetAbsY - mainAbs.Y) / mainSize.Y
+
+		slider.AnchorPoint = Vector2.new(0, 0)
+		slider.Position = UDim2.new(relX, 0, relY, 0)
+
+		local sMid = slider.AbsolutePosition.X + slider.AbsoluteSize.X * 0.5
+		local iLeft = inner.AbsolutePosition.X
+		local iRight = iLeft + inner.AbsoluteSize.X
+		if sMid < iLeft or sMid > iRight then
+			slider.Position = UDim2.new(0, targetAbsX - mainAbs.X, 0, targetAbsY - mainAbs.Y)
+		end
+	end)
+	locking = false
+end
+
+local bindBar -- forward
+
+local function scheduleRebind()
+	if not autoFishOn or rebindQueued then return end
+	rebindQueued = true
+	task.spawn(function()
+		clearConns() -- full off
+		task.wait(0.06)
+		if autoFishOn then
+			bindBar() -- full on, fresh instances
+		end
+		rebindQueued = false
+	end)
+end
+
+local function instancesLive()
+	return cur.slider and cur.slider.Parent
+		and cur.inner and cur.inner.Parent
+		and cur.main and cur.main.Parent
+end
+
+bindBar = function()
+	local bar, ag = findBar()
+	if not bar then return false end
+
+	clearConns()
+	cur.main = bar.main
+	cur.slider = bar.slider
+	cur.inner = bar.inner
+
+	local function tick()
+		if not autoFishOn then return end
+		-- destroyed / replaced?
+		if not instancesLive() then
+			scheduleRebind()
+			return
+		end
+		-- MainBar got a *different* InnerFrame or Slider child?
+		local s2 = cur.main:FindFirstChild("Slider")
+		local i2 = cur.main:FindFirstChild("InnerFrame")
+		if s2 ~= cur.slider or i2 ~= cur.inner then
+			scheduleRebind()
+			return
+		end
+		forceInside(cur.slider, cur.inner, cur.main)
+	end
+
+	if RunService.PreRender then
+		table.insert(conns, RunService.PreRender:Connect(tick))
+	end
+	table.insert(conns, RunService.RenderStepped:Connect(tick))
+	table.insert(conns, RunService.Heartbeat:Connect(tick))
+
+	table.insert(conns, cur.slider:GetPropertyChangedSignal("Position"):Connect(function()
+		if not autoFishOn or locking then return end
+		if not instancesLive() then
+			scheduleRebind()
+			return
+		end
+		forceInside(cur.slider, cur.inner, cur.main)
+	end))
+
+	-- if THIS inner is removed from tree
+	table.insert(conns, cur.inner.AncestryChanged:Connect(function(_, parent)
+		if not parent then scheduleRebind() end
+	end))
+	table.insert(conns, cur.slider.AncestryChanged:Connect(function(_, parent)
+		if not parent then scheduleRebind() end
+	end))
+
+	-- new InnerFrame/Slider parented under MainBar
+	table.insert(conns, cur.main.ChildAdded:Connect(function(ch)
+		if ch.Name == "InnerFrame" or ch.Name == "Slider" then
+			scheduleRebind()
+		end
+	end))
+	table.insert(conns, cur.main.ChildRemoved:Connect(function(ch)
+		if ch.Name == "InnerFrame" or ch.Name == "Slider" then
+			scheduleRebind()
+		end
+	end))
+
+	if ag then
+		table.insert(conns, ag.ChildAdded:Connect(function()
+			scheduleRebind()
+		end))
+		table.insert(conns, ag.ChildRemoved:Connect(function()
+			scheduleRebind()
+		end))
+	end
+
+	forceInside(cur.slider, cur.inner, cur.main)
+	return true
+end
+
+Games:CreateToggle({
+	name = "Auto Fish",
+	value = false,
+	callback = function(state)
+		autoFishOn = state
+
+		if not state then
+			clearConns()
+			notify("Fish", "Off")
+			return
+		end
+
+		notify("Fish", "On — rebind when InnerFrame/Slider remade")
+		bindBar()
+
+		-- backup poll: new instances even if signals miss
+		task.spawn(function()
+			while autoFishOn do
+				local bar = findBar()
+				if not bar then
+					-- waiting for next catch
+				elseif not instancesLive()
+					or bar.slider ~= cur.slider
+					or bar.inner ~= cur.inner
+					or bar.main ~= cur.main
+				then
+					scheduleRebind()
+				end
+				task.wait(0.1)
+			end
+		end)
+	end,
+})
 
 
 
@@ -2691,6 +2763,80 @@ do
 		loadComments(plr)
 		loadDonations(plr)
 	end
+
+    LookupTab:CreateDivider({ text = "Copy lists" })
+
+LookupTab:CreateButton({
+	name = "Copy likes (names)",
+	buttonText = "Copy likes",
+	callback = function()
+		if not SelectedPlayer or not SelectedPlayer.Parent then
+			window:Notify({ title = "Lookup", text = "Load a player first.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		local profile = getProfile(SelectedPlayer)
+		local likes = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("LikesDislikes")
+			and profile.History.LikesDislikes:FindFirstChild("Likes")
+		if not likes then
+			window:Notify({ title = "Lookup", text = "No likes data.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		local ids = collectIdList(likes:FindFirstChild("IDs"))
+		local names = {}
+		for _, id in ipairs(ids) do
+			local n = idToName(id)
+			if n and n ~= "" and n ~= "—" then
+				table.insert(names, n)
+			end
+		end
+		local text = "Likes: " .. (#names > 0 and table.concat(names, ", ") or "(none)")
+		if typeof(setclipboard) == "function" then
+			setclipboard(text)
+			window:Notify({ title = "Lookup", text = "Copied " .. #names .. " like name(s).", icon = 127357392034684, duration = 2 })
+		else
+			print(text)
+			window:Notify({ title = "Lookup", text = "No setclipboard — printed to console.", icon = 127357392034684, duration = 3 })
+		end
+	end,
+})
+
+LookupTab:CreateButton({
+	name = "Copy dislikes (names)",
+	buttonText = "Copy dislikes",
+	callback = function()
+		if not SelectedPlayer or not SelectedPlayer.Parent then
+			window:Notify({ title = "Lookup", text = "Load a player first.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		local profile = getProfile(SelectedPlayer)
+		local dis = profile
+			and profile:FindFirstChild("History")
+			and profile.History:FindFirstChild("LikesDislikes")
+			and profile.History.LikesDislikes:FindFirstChild("Dislikes")
+		if not dis then
+			window:Notify({ title = "Lookup", text = "No dislikes data.", icon = 127357392034684, duration = 3 })
+			return
+		end
+		local ids = collectIdList(dis:FindFirstChild("IDs"))
+		local names = {}
+		for _, id in ipairs(ids) do
+			local n = idToName(id)
+			if n and n ~= "" and n ~= "—" then
+				table.insert(names, n)
+			end
+		end
+		local text = "Dislikes: " .. (#names > 0 and table.concat(names, ", ") or "(none)")
+		if typeof(setclipboard) == "function" then
+			setclipboard(text)
+			window:Notify({ title = "Lookup", text = "Copied " .. #names .. " dislike name(s).", icon = 127357392034684, duration = 2 })
+		else
+			print(text)
+			window:Notify({ title = "Lookup", text = "No setclipboard — printed to console.", icon = 127357392034684, duration = 3 })
+		end
+	end,
+})
 
 	LookupTab:CreateButton({
 		name = "Load player",
