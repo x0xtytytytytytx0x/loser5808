@@ -2284,7 +2284,7 @@ local function refreshRod()
 
 	-- unequip
 	pcall(function() humanoid:UnequipTools() end)
-	task.wait(0.3)
+	task.wait(1)
 
 	-- equip again (may have moved to backpack)
 	rod = findRod()
@@ -2315,6 +2315,7 @@ local function castLine()
 	local toolAction = remotes and remotes:FindFirstChild("ToolAction")
 	if not toolAction then return false end
 	return pcall(function()
+    task.wait(0.5)
 		toolAction:FireServer("CastLine", { Position = CAST_POS }, 1)
 	end)
 end
