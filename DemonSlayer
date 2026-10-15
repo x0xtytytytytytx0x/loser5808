@@ -1,0 +1,308 @@
+
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
+local window = UILibrary:CreateWindow({UsePremadeScripts = false, skipFakeLoading = true})
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+
+local function fireChar(id)
+	local r = ReplicatedStorage:FindFirstChild("Char")
+	if not r then
+		notify("Characters", "Char remote missing.")
+		return
+	end
+	pcall(function()
+		r:FireServer(id)
+	end)
+	notify("Characters", "Selected: " .. tostring(id), 2)
+end
+
+local function getHRP()
+	local char = LocalPlayer.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getAllTools()
+	local list = {}
+	local seen = {}
+	local function add(parent)
+		if not parent then return end
+		for _, t in ipairs(parent:GetChildren()) do
+			if t:IsA("Tool") and not seen[t] then
+				seen[t] = true
+				table.insert(list, t)
+			end
+		end
+	end
+	add(LocalPlayer.Character)
+	add(LocalPlayer:FindFirstChildOfClass("Backpack"))
+	return list
+end
+
+-- try common move activate patterns on a tool
+local function fireToolMoves(tool)
+	if not tool then return end
+	pcall(function()
+		local act = tool:FindFirstChild("activatetool")
+		if act and (act:IsA("RemoteEvent") or act:IsA("RemoteFunction")) then
+			if act:IsA("RemoteEvent") then
+				act:FireServer(LocalPlayer)
+			else
+				act:InvokeServer(LocalPlayer)
+			end
+		end
+	end)
+	-- any RemoteEvent under the tool that looks like an ability
+	for _, d in ipairs(tool:GetDescendants()) do
+		if d:IsA("RemoteEvent") then
+			local n = string.lower(d.Name)
+			if n:find("activate", 1, true)
+				or n:find("skill", 1, true)
+				or n:find("ability", 1, true)
+				or n:find("move", 1, true)
+				or n:find("attack", 1, true)
+				or n:find("use", 1, true)
+				or n == "activatetool"
+			then
+				pcall(function()
+					d:FireServer(LocalPlayer)
+				end)
+			end
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- PLAYER
+----------------------------------------------------------------
+local PlayerTab = window:CreateTab({
+	name = "Player",
+	icon = 117259180607823,
+})
+
+
+local eatOn = false
+PlayerTab:CreateToggle({
+	name = "Auto Eat",
+	value = false,
+	callback = function(state)
+		eatOn = state
+		if not state then return end
+		task.spawn(function()
+			while eatOn do
+				pcall(function()
+					local r = ReplicatedStorage:FindFirstChild("Eating")
+					if r then r:FireServer() end
+				end)
+				task.wait()
+			end
+		end)
+	end,
+})
+
+PlayerTab:CreateDivider({ text = "Dash" })
+
+local function fireDash()
+	local char = LocalPlayer.Character
+	local hrp = getHRP()
+	if not char or not hrp then return false end
+	local remote = ReplicatedStorage:FindFirstChild("DashRemote")
+	if not remote then return false end
+	local pos = hrp.Position
+	local dir = hrp.CFrame.LookVector
+	dir = Vector3.new(dir.X, 0, dir.Z)
+	if dir.Magnitude < 0.05 then
+		dir = Vector3.new(0, 0, -1)
+	else
+		dir = dir.Unit
+	end
+	return pcall(function()
+		remote:FireServer(char, pos, dir)
+	end)
+end
+
+local spamDashOn = false
+PlayerTab:CreateToggle({
+	name = "Spam dash effect",
+	value = false,
+	callback = function(state)
+		spamDashOn = state
+		if not state then
+			notify("Dash", "Spam dash off")
+			return
+		end
+		notify("Dash", "Spam dash on")
+		task.spawn(function()
+			while spamDashOn do
+				fireDash()
+				task.wait()
+			end
+		end)
+	end,
+})
+
+----------------------------------------------------------------
+-- CHARACTERS
+----------------------------------------------------------------
+local CharTab = window:CreateTab({
+	name = "Characters",
+	icon = 13289762774,
+})
+
+local FREE = {
+	{ label = "Crow — FREE", id = "Crow" },
+	{ label = "Water Rookie (Tanjiro V1) — FREE", id = "Tanjiro" },
+	{ label = "Flaming Blood (Nezuko) — FREE", id = "Nezuko" },
+	{ label = "Beginner Slayer (Murata) — FREE", id = "Murata" },
+}
+
+local KILLS = {
+	{ label = "Boar (Inosuke) — 5", id = "Inosuke" },
+	{ label = "Flower Pupil (Kanao) — 5", id = "Kanao" },
+	{ label = "Thunder God (Zenitsu V1) — 10", id = "Zenitsu" },
+	{ label = "Gun Wielder (Genya) — 15", id = "Genya" },
+	{ label = "The Apprentice (Yushiro) — 20", id = "Yushiro" },
+	{ label = "Sound Master (Tengen) — 25", id = "Tengen" },
+	{ label = "Bug Master (Shinobu) — 30", id = "Shinobu" },
+	{ label = "Mist Master (Muichiro) — 35", id = "Muichiro" },
+	{ label = "Wind Master (Sanemi) — 40", id = "Sanemi" },
+	{ label = "Serpent Master (Obanai) — 45", id = "Obanai" },
+	{ label = "Love Master (Mitsuri) — 50", id = "Mitsuri" },
+	{ label = "Stone Master (Gyomei) — 55", id = "Gyomei" },
+	{ label = "Water Master (Giyu V1) — 60", id = "Giyu" },
+	{ label = "Fire God (Tanjiro V2) — 65", id = "TanjiroSun" },
+	{ label = "Flame Master (Rengoku) — 100", id = "Rengoku" },
+	{ label = "Sun God (Tanjiro V3) — 1000", id = "Tanjiro3" },
+	{ label = "Water God (Giyu V2) — 2500", id = "Giyu2" },
+}
+
+local GAMEPASS = {
+	{ label = "Demon 1 — needs Demon Pass 1", id = "Demon1" },
+	{ label = "Demon 2 — needs Demon Pass 1", id = "Demon2" },
+	{ label = "Demon 3 — needs Demon Pass 1", id = "Demon3" },
+	{ label = "Demon 4 — needs Demon Pass 2", id = "Demon4" },
+	{ label = "Demon 5 — needs Demon Pass 2", id = "Demon5" },
+	{ label = "Demon 6 — needs Demon Pass 2", id = "Demon6" },
+	{ label = "Kakushi — needs Support Troops Pass", id = "Kakushi" },
+	{ label = "Azuzu — needs Azuzu Pass", id = "Azuzu" },
+	{ label = "Tamayo — needs The Doctor Pass", id = "Tamayo" },
+	{ label = "Kizura — needs Kizura Pass", id = "Kizura" },
+	{ label = "Zenitsu V2 — needs TFG Pass", id = "Zenitsu2" },
+}
+
+local function labels(list)
+	local t = {}
+	for _, e in ipairs(list) do table.insert(t, e.label) end
+	return t
+end
+
+local function idFromLabel(list, label)
+	for _, e in ipairs(list) do
+		if e.label == label then return e.id end
+	end
+	return nil
+end
+
+CharTab:CreateDivider({ text = "Free" })
+local freePick = FREE[1].label
+CharTab:CreateDropdown({
+	name = "Free character",
+	multiSelect = false,
+	options = labels(FREE),
+	value = freePick,
+	callback = function(v)
+		if type(v) == "string" then freePick = v end
+	end,
+})
+CharTab:CreateButton({
+	name = "Equip free character",
+	buttonText = "Equip",
+	callback = function()
+		local id = idFromLabel(FREE, freePick)
+		if id then fireChar(id) end
+	end,
+})
+
+CharTab:CreateDivider({ text = "Kill unlocks" })
+CharTab:CreateText({
+	name = "note",
+	text = "It bypasses the kills needed so just equip what you want",
+	starrable = false,
+})
+local killPick = KILLS[1].label
+CharTab:CreateDropdown({
+	name = "Kill-unlock character",
+	multiSelect = false,
+	options = labels(KILLS),
+	value = killPick,
+	callback = function(v)
+		if type(v) == "string" then killPick = v end
+	end,
+})
+CharTab:CreateButton({
+	name = "Equip kill character",
+	buttonText = "Equip",
+	callback = function()
+		local id = idFromLabel(KILLS, killPick)
+		if id then fireChar(id) end
+	end,
+})
+
+CharTab:CreateDivider({ text = "Gamepass (requires owned pass)" })
+local gpPick = GAMEPASS[1].label
+CharTab:CreateDropdown({
+	name = "Gamepass character",
+	multiSelect = false,
+	options = labels(GAMEPASS),
+	value = gpPick,
+	callback = function(v)
+		if type(v) == "string" then gpPick = v end
+	end,
+})
+CharTab:CreateButton({
+	name = "Equip gamepass character",
+	buttonText = "Equip",
+	callback = function()
+		local id = idFromLabel(GAMEPASS, gpPick)
+		if id then fireChar(id) end
+	end,
+})
+
+----------------------------------------------------------------
+-- SKINS
+----------------------------------------------------------------
+local SkinTab = window:CreateTab({
+	name = "Skins",
+	icon = 99598444336169,
+})
+
+local SKINS = {
+	"azuzuSkin1", "crowSkin1", "giyuSkin1", "gyomeiSkin1", "gyomeiSkin2",
+	"inosukeSkin1", "kanaoSkin1", "kanaoSkin2", "mitsuriSkin1", "mitsuriSkin2",
+	"murataSkin1", "shinobuSkin1", "tanjiro2Skin1", "tanjiro2Skin2", "tanjiro3Skin1",
+	"tanjiroSkin1", "tengenSkin1", "yushiroSkin1", "zenitsuSkin1",
+}
+
+local skinPick = SKINS[1]
+SkinTab:CreateDivider({ text = "Skin select" })
+SkinTab:CreateDropdown({
+	name = "Skin",
+	multiSelect = false,
+	options = SKINS,
+	value = skinPick,
+	callback = function(v)
+		if type(v) == "string" then skinPick = v end
+	end,
+})
+SkinTab:CreateButton({
+	name = "Apply skin",
+	buttonText = "Apply",
+	callback = function()
+		fireChar(skinPick)
+	end,
+})
+
+window:CreateSettingsTab()
+window:CreateOwnerTab()
