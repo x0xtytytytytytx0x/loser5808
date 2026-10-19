@@ -1,30 +1,33 @@
-
+--[[
+	R8//TW0 — Poke
+]]
 local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/R8Library/R8Library/refs/heads/main/R8LibraryMain"))()
-local window = UILibrary:CreateWindow({UsePremadeScripts = false, skipFakeLoading = true})
-local tab = window:CreateTab({
-	name = "World",
-	icon = 11395780588,
-})
+local window = UILibrary:CreateWindow({ UsePremadeScripts = false, skipFakeLoading = true })
 
-local Drinks = window:CreateTab({
-	name = "Drinks",
-	icon = 398941185,
-})
+local World = window:CreateTab({ name = "World", icon = 11395780588 })
+local Drinks = window:CreateTab({ name = "Drinks", icon = 398941185 })
+local Games = window:CreateTab({ name = "Games", icon = 112061798075673 })
+local Utility = window:CreateTab({ name = "Utility", icon = 101596398409097 })
 
-local Games = window:CreateTab({
-	name = "Games",
-	icon = 112061798075673,
-})
-
--- Sleeping Beauty Counter (put this in your Home / main tab)
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
+
+----------------------------------------------------------------
+-- Shared helpers
+----------------------------------------------------------------
+local function notify(title, text, duration)
+	window:Notify({
+		title = title or "R8//TW0",
+		text = text or "",
+		icon = 127357392034684,
+		duration = duration or 3,
+	})
+end
 
 local function getSleepingBeautyCount()
 	local count = 0
 	local backpack = player:FindFirstChild("Backpack")
 	local char = player.Character
-
 	if backpack then
 		for _, item in ipairs(backpack:GetChildren()) do
 			if item.Name == "Sleeping Beauty" then
@@ -32,35 +35,36 @@ local function getSleepingBeautyCount()
 			end
 		end
 	end
-
-	-- also count if it's currently equipped
 	if char then
 		local held = char:FindFirstChildOfClass("Tool")
 		if held and held.Name == "Sleeping Beauty" then
 			count += 1
 		end
 	end
-
 	return count
 end
 
-local sleepingStat = tab:CreateStat({
+----------------------------------------------------------------
+-- WORLD
+----------------------------------------------------------------
+World:CreateDivider({ text = "Stats" })
+local sleepingStat = World:CreateStat({
 	name = "Sleeping Beauty",
-	value = getSleepingBeautyCount()
+	value = getSleepingBeautyCount(),
 })
-
--- live update
 task.spawn(function()
 	while true do
-		sleepingStat:Set(getSleepingBeautyCount())  -- most UIs use :Set()
-		-- If your UI library uses a different method, try:
-		-- sleepingStat.Value = getSleepingBeautyCount()
-		-- or sleepingStat:Update(getSleepingBeautyCount())
+		pcall(function()
+			sleepingStat:Set(getSleepingBeautyCount())
+		end)
 		task.wait(0.25)
 	end
 end)
 
-local GroupWatchEnabled = false
+----------------------------------------------------------------
+-- WORLD: Staff
+----------------------------------------------------------------
+World:CreateDivider({ text = "Staff" })
 
 local GROUP_ID = 2757172
 
@@ -74,162 +78,85 @@ local WARN_ROLES = {
 	"Ranker",
 	"QA Tester",
 	"Noted Member",
-	--"Gentlemen/women",
 }
 
-local function getGroupRole(player)
-	local success, role = pcall(function()
-		return player:GetRoleInGroupAsync(GROUP_ID)
+local KICK_ROLES = {
+	"Holder",
+	"Founder",
+	"Community Manager",
+	"Developer",
+	"Staff",
+	"Recreation",
+	"Ranker",
+}
+
+local GroupWatchEnabled = false
+local StaffKickEnabled = false
+
+local function getGroupRole(plr)
+	local ok, role = pcall(function()
+		return plr:GetRoleInGroupAsync(GROUP_ID)
 	end)
-
-	if not success then
-		warn("[Group Watch] Failed to get role for " .. player.Name)
+	if not ok or not role or role == "Guest" then
 		return nil
 	end
-
-	-- Guest means they aren't in the group.
-	if role == "Guest" then
-		return nil
-	end
-
 	return role
 end
 
-local function roleIsWanted(role)
-	-- Empty list = everyone in the group
-	if #WARN_ROLES == 0 then
-		return true
+local function roleInList(role, list)
+	if not role then return false end
+	if #list == 0 then return true end
+	for _, r in ipairs(list) do
+		if role == r then return true end
 	end
-
-	for _, wantedRole in ipairs(WARN_ROLES) do
-		if role == wantedRole then
-			return true
-		end
-	end
-
 	return false
 end
 
-local function checkGroupPlayer(player, reason)
+local function checkStaffWarn(plr, reason)
 	task.spawn(function()
-		local role = getGroupRole(player)
-
-		if not role then
-			return
-		end
-
-		if not roleIsWanted(role) then
-			return
-		end
-
-		local message
-
+		if plr == player then return end
+		local role = getGroupRole(plr)
+		if not roleInList(role, WARN_ROLES) then return end
+		local msg
 		if reason == "joined" then
-			message = player.DisplayName
-				.. " joined the server!\nRole: "
-				.. role
+			msg = plr.DisplayName .. " joined · " .. role
 		else
-			message = player.DisplayName
-				.. " is already in the server!\nRole: "
-				.. role
+			msg = plr.DisplayName .. " is here · " .. role
 		end
+		notify("Staff", msg, 4)
+	end)
+end
 
-		window:Notify({
-			title = "R8//TW0",
-			text = message,
-			icon = 127357392034684,
-			duration = 4,
-		})
-
-		print(
-			"[Group Watch]",
-			player.Name,
-			"| Role:",
-			role,
-			"|",
-			reason
-		)
+local function checkStaffKick(plr)
+	task.spawn(function()
+		if plr == player then return end
+		local role = getGroupRole(plr)
+		if not roleInList(role, KICK_ROLES) then return end
+		notify("Staff", "Leaving — " .. plr.DisplayName .. " (" .. role .. ")", 2)
+		task.wait(0.15)
+		pcall(function()
+			player:Kick("Staff in server: " .. plr.DisplayName .. " [" .. role .. "]")
+		end)
 	end)
 end
 
 
-tab:CreateToggle({
-	name = "Staff join Warnings",
-	value = false,
 
-	callback = function(state)
-		GroupWatchEnabled = state
-
-		if state then
-			window:Notify({
-				title = "R8//TW0",
-				text = "Group join warnings enabled.",
-				icon = 127357392034684,
-				duration = 4,
-			})
-
-			-- Check everyone who is ALREADY in the server.
-			for _, player in ipairs(Players:GetPlayers()) do
-				checkGroupPlayer(player, "already")
-			end
-
-		else
-			window:Notify({
-				title = "R8//TW0",
-				text = "Group join warnings disabled.",
-				icon = 127357392034684,
-				duration = 4,
-			})
-		end
-	end,
-})
-
-
---// ============================================
---// WATCH FUTURE JOINS
---// ============================================
-
-Players.PlayerAdded:Connect(function(player)
-	if not GroupWatchEnabled then
-		return
+Players.PlayerAdded:Connect(function(plr)
+	if GroupWatchEnabled then
+		checkStaffWarn(plr, "joined")
 	end
-
-	checkGroupPlayer(player, "joined")
+	if StaffKickEnabled then
+		checkStaffKick(plr)
+	end
 end)
 
+----------------------------------------------------------------
+-- WORLD: Tools
+----------------------------------------------------------------
+World:CreateDivider({ text = "Map" })
 
-tab:CreateToggle({
-    name = "Rapid Tool Equip",
-    value = false,
-    callback = function(state)
-        if state then
-            task.spawn(function()
-                while state do
-                    local character = player.Character
-                    local backpack = player:FindFirstChildOfClass("Backpack")
-
-                    if character and backpack then
-                        for _, tool in ipairs(backpack:GetChildren()) do
-                            if tool:IsA("Tool") then
-                                tool.Parent = character
-                            end
-                        end
-
-                        for _, tool in ipairs(character:GetChildren()) do
-                            if tool:IsA("Tool") then
-                                tool.Parent = backpack
-                            end
-                        end
-                    end
-
-                    task.wait()
-                end
-            end)
-        end
-    end,
-})
-
-tab:CreateButton({
+World:CreateButton({
 	name = "Remove barriers",
 	verified = false,
 	callback = function()
@@ -244,74 +171,256 @@ tab:CreateButton({
 				end
 			end
 		end
-
 		local invis = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("InvisWalls")
-		if invis then
-			noCollide(invis)
-		end
-
+		if invis then noCollide(invis) end
 		local hitbox = workspace:FindFirstChild("GameAssets")
 			and workspace.GameAssets:FindFirstChild("Activties")
 			and workspace.GameAssets.Activties:FindFirstChild("Arena")
 			and workspace.GameAssets.Activties.Arena:FindFirstChild("A1")
 			and workspace.GameAssets.Activties.Arena.A1:FindFirstChild("Hitbox")
-		if hitbox then
-			noCollide(hitbox)
-		end
-
-		-- any instance named like a barrier (folder or part)
+		if hitbox then noCollide(hitbox) end
 		for _, inst in ipairs(workspace:GetDescendants()) do
 			local n = string.lower(inst.Name)
 			if n == "barrier" or string.find(n, "barrier", 1, true) then
 				noCollide(inst)
 			end
 		end
-
-		window:Notify({
-			title = "Barriers",
-			text = "Collision disabled on invis walls, arena hitbox, and barriers.",
-			icon = 127357392034684,
-			duration = 4,
-		})
+		notify("Map", "Barriers opened.", 3)
 	end,
 })
 
 ----------------------------------------------------------------
--- WORLD: auto get / mix / place
+-- WORLD: Auto drinks
 ----------------------------------------------------------------
+World:CreateDivider({ text = "Auto drinks" })
+
+getgenv().AutoGetMix = false
+getgenv().AutoPlaceOnly = false
+
+World:CreateToggle({
+	name = "Auto Get + Mix",
+	value = false,
+	callback = function(state)
+		getgenv().AutoGetMix = state
+		if not state then return end
+		task.spawn(function()
+			local ReplicatedStorage = game:GetService("ReplicatedStorage")
+			local ToolAction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ToolAction")
+			local SleepingBeautyBottle = workspace:WaitForChild("GameAssets")
+				:WaitForChild("Interactables")
+				:WaitForChild("Bottles")
+				:WaitForChild("Sleeping Beauty")
+			local ITEM_NAME = "???"
+
+			local function countItem(char, backpack)
+				local count = 0
+				if backpack then
+					for _, item in ipairs(backpack:GetChildren()) do
+						if item.Name == ITEM_NAME then count += 1 end
+					end
+				end
+				local held = char and char:FindFirstChildOfClass("Tool")
+				if held and held.Name == ITEM_NAME then count += 1 end
+				return count
+			end
+
+			while getgenv().AutoGetMix do
+				local char = player.Character
+				local backpack = player:FindFirstChild("Backpack")
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+				if char and backpack and humanoid then
+					if countItem(char, backpack) < 5 then
+						local drinkArtist = workspace:FindFirstChild("GameAssets")
+							and workspace.GameAssets:FindFirstChild("Interactables")
+							and workspace.GameAssets.Interactables:FindFirstChild("Givers")
+							and workspace.GameAssets.Interactables.Givers:FindFirstChild("DrinkArtist")
+						if drinkArtist then
+							local model = drinkArtist:FindFirstChild(ITEM_NAME, true)
+							local clickDetector = model and model:FindFirstChildOfClass("ClickDetector")
+							if not clickDetector then
+								for _, child in ipairs(drinkArtist:GetChildren()) do
+									local m = child:FindFirstChild(ITEM_NAME)
+									if m then
+										clickDetector = m:FindFirstChildOfClass("ClickDetector")
+										if clickDetector then break end
+									end
+								end
+							end
+							if clickDetector then
+								pcall(function() fireclickdetector(clickDetector) end)
+							end
+						end
+					end
+					local item = backpack:FindFirstChild(ITEM_NAME)
+					if item and item.Parent == backpack then
+						humanoid:EquipTool(item)
+						task.wait(0.05)
+					end
+					local held = char:FindFirstChildOfClass("Tool")
+					if held and held.Name == ITEM_NAME then
+						ToolAction:FireServer("Mix", SleepingBeautyBottle, 0)
+					end
+				end
+				task.wait(0.05)
+			end
+		end)
+	end,
+})
+
+World:CreateToggle({
+	name = "Auto Place Only",
+	value = false,
+	callback = function(state)
+		getgenv().AutoPlaceOnly = state
+		if not state then return end
+		task.spawn(function()
+			local ReplicatedStorage = game:GetService("ReplicatedStorage")
+			local PlaceTool = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlaceTool")
+			local goodRotation = CFrame.new(
+				0, 0, 0,
+				-0.9999921321868896, -0.002560368739068508, 0.003036483423784375,
+				0, 0.7644979357719421, 0.6446262001991272,
+				-0.003971865866333246, 0.6446211338043213, -0.7644919157028198
+			)
+			local MAX_DISTANCE = 20
+			local PLACEMENTS_PER_TABLE = 12
+			local index, placeCount = 1, 0
+			local nearbyTables = {}
+
+			local function updateNearbyTables()
+				nearbyTables = {}
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				local map = workspace:FindFirstChild("Map")
+				if not map then return end
+				local seen = {}
+				for _, obj in ipairs(map:GetDescendants()) do
+					if obj.Name == "CanPlaceDrink" then
+						local part = obj:IsA("BasePart") and obj or obj.Parent
+						if part and part:IsA("BasePart") and not seen[part] then
+							if (part.Position - root.Position).Magnitude <= MAX_DISTANCE then
+								seen[part] = true
+								table.insert(nearbyTables, part)
+							end
+						end
+					end
+				end
+			end
+
+			task.spawn(function()
+				while getgenv().AutoPlaceOnly do
+					updateNearbyTables()
+					task.wait(1)
+				end
+			end)
+
+			local function getRandomPositionOnPart(part)
+				local size, cf = part.Size, part.CFrame
+				local offsetX = (math.random() - 0.5) * (size.X * 0.75)
+				local offsetZ = (math.random() - 0.5) * (size.Z * 0.75)
+				local offsetY = size.Y / 2 + 0.08
+				return (cf * CFrame.new(offsetX, offsetY, offsetZ)).Position
+			end
+
+			while getgenv().AutoPlaceOnly do
+				local char = player.Character
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+				local backpack = player:FindFirstChild("Backpack")
+				if char and humanoid then
+					local tool = char:FindFirstChild("Sleeping Beauty")
+					if not tool and backpack then
+						local sleeping = backpack:FindFirstChild("Sleeping Beauty")
+						if sleeping then
+							humanoid:EquipTool(sleeping)
+							task.wait(0.06)
+						end
+					end
+					tool = char:FindFirstChild("Sleeping Beauty")
+					if tool and #nearbyTables > 0 then
+						if index > #nearbyTables then index = 1 end
+						local target = nearbyTables[index]
+						if target and target.Parent then
+							local placeCF = CFrame.new(getRandomPositionOnPart(target)) * goodRotation
+							PlaceTool:FireServer(placeCF)
+							placeCount += 1
+						end
+						if placeCount >= PLACEMENTS_PER_TABLE then
+							placeCount = 0
+							index += 1
+						end
+					end
+				end
+				task.wait()
+			end
+		end)
+	end,
+})
 
 ----------------------------------------------------------------
--- WORLD: Warning pipeline (mix SB to 1000 → rapid equip)
+-- UTILITY: Lagger + rapid equip
 ----------------------------------------------------------------
-tab:CreateDivider({ text = "Lagger" })
-tab:CreateText({
-	name = "Lagger stages",
-	text = "Stage 1: Auto Get+Mix ??? until Sleeping Beauty hits 1000.\nStage 2: Rapid tool equip until this toggle is off.",
+
+Utility:CreateToggle({
+	name = "Staff join warnings",
+	value = false,
+	callback = function(state)
+		GroupWatchEnabled = state
+		if state then
+			notify("Staff", "Warnings on.", 2)
+			for _, plr in ipairs(Players:GetPlayers()) do
+				checkStaffWarn(plr, "already")
+			end
+		else
+			notify("Staff", "Warnings off.", 2)
+		end
+	end,
+})
+
+Utility:CreateToggle({
+	name = "Staff join kick",
+	value = false,
+	callback = function(state)
+		StaffKickEnabled = state
+		if state then
+			notify("Staff", "Auto-kick on.", 2)
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr ~= player then
+					checkStaffKick(plr)
+				end
+			end
+		else
+			notify("Staff", "Auto-kick off.", 2)
+		end
+	end,
+})
+
+Utility:CreateDivider({ text = "Lagger" })
+Utility:CreateText({
+	name = "How to use",
+	text = "Turn on to farm SB to 3000, then it starts the lag. Turn off to stop.",
 	starrable = false,
 })
 
 local WarningOn = false
-local warningStageStat = tab:CreateStat({ name = "Lagging stage", value = "idle" })
-local warningCountStat = tab:CreateStat({ name = "SB count", value = "0 / 3000" })
+local warningStageStat = Utility:CreateStat({ name = "Stage", value = "idle" })
+local warningCountStat = Utility:CreateStat({ name = "SB count", value = "0 / 3000" })
 
-tab:CreateToggle({
-	name = "lagging pipeline",
+Utility:CreateToggle({
+	name = "Lagger",
 	value = false,
 	callback = function(state)
 		WarningOn = state
 		if not state then
 			pcall(function() warningStageStat:Set("idle") end)
-			window:Notify({ title = "Lagging", text = "Stopped.", icon = 127357392034684, duration = 2 })
+			notify("Lagger", "Stopped.", 2)
 			return
 		end
 		pcall(function() warningStageStat:Set("mixing") end)
-		window:Notify({ title = "Lagging", text = "Stage 1 — mix to 1000 SB.", icon = 127357392034684, duration = 3 })
+		notify("Lagger", "Farming to 3000…", 2)
 
 		task.spawn(function()
-			-- reuse same logic as Auto Get + Mix until count >= 1000
 			getgenv().AutoGetMix = true
-			local startMix = true
-			-- enable existing auto mix by setting flag; also run own loop so we can transition
 			local ReplicatedStorage = game:GetService("ReplicatedStorage")
 			local ToolAction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ToolAction")
 			local SleepingBeautyBottle = workspace:WaitForChild("GameAssets")
@@ -380,7 +489,7 @@ tab:CreateToggle({
 			end
 
 			pcall(function() warningStageStat:Set("equip") end)
-			window:Notify({ title = "Warning", text = "3000 SB — rapid equip on.", icon = 127357392034684, duration = 3 })
+			notify("Lagger", "3000 reached — rapid equip.", 2)
 
 			while WarningOn do
 				local character = player.Character
@@ -403,182 +512,27 @@ tab:CreateToggle({
 	end,
 })
 
-tab:CreateDivider({ text = "Auto drinks" })
-
-getgenv().AutoGetMix = false
-getgenv().AutoPlaceOnly = false
-
-tab:CreateToggle({
-	name = "Auto Get + Mix",
+Utility:CreateDivider({ text = "Tools" })
+local RapidEquipOn = false
+Utility:CreateToggle({
+	name = "Rapid tool equip",
 	value = false,
 	callback = function(state)
-		getgenv().AutoGetMix = state
+		RapidEquipOn = state
 		if not state then return end
-
 		task.spawn(function()
-			local Players = game:GetService("Players")
-			local ReplicatedStorage = game:GetService("ReplicatedStorage")
-			local player = Players.LocalPlayer
-			local ToolAction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ToolAction")
-			local SleepingBeautyBottle = workspace:WaitForChild("GameAssets")
-				:WaitForChild("Interactables")
-				:WaitForChild("Bottles")
-				:WaitForChild("Sleeping Beauty")
-
-			local ITEM_NAME = "???"  -- change this if the tool name is different
-
-			local function countItem(char, backpack)
-				local count = 0
-				if backpack then
-					for _, item in ipairs(backpack:GetChildren()) do
-						if item.Name == ITEM_NAME then count += 1 end
-					end
-				end
-				local held = char and char:FindFirstChildOfClass("Tool")
-				if held and held.Name == ITEM_NAME then count += 1 end
-				return count
-			end
-
-			while getgenv().AutoGetMix do
-				local char = player.Character
-				local backpack = player:FindFirstChild("Backpack")
-				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-
-				if char and backpack and humanoid then
-					if countItem(char, backpack) < 5 then
-						local drinkArtist = workspace:FindFirstChild("GameAssets")
-							and workspace.GameAssets:FindFirstChild("Interactables")
-							and workspace.GameAssets.Interactables:FindFirstChild("Givers")
-							and workspace.GameAssets.Interactables.Givers:FindFirstChild("DrinkArtist")
-						if drinkArtist then
-							-- Try name-based first (more reliable than children index)
-							local model = drinkArtist:FindFirstChild(ITEM_NAME, true)
-							local clickDetector = model and model:FindFirstChildOfClass("ClickDetector")
-							if not clickDetector then
-								-- fallback: scan children for a matching name
-								for _, child in ipairs(drinkArtist:GetChildren()) do
-									local m = child:FindFirstChild(ITEM_NAME)
-									if m then
-										clickDetector = m:FindFirstChildOfClass("ClickDetector")
-										if clickDetector then break end
-									end
-								end
-							end
-							if clickDetector then
-								pcall(function() fireclickdetector(clickDetector) end)
-							end
+			while RapidEquipOn do
+				local character = player.Character
+				local backpack = player:FindFirstChildOfClass("Backpack")
+				if character and backpack then
+					for _, tool in ipairs(backpack:GetChildren()) do
+						if tool:IsA("Tool") then
+							tool.Parent = character
 						end
 					end
-
-					local item = backpack:FindFirstChild(ITEM_NAME)
-						or (char:FindFirstChildOfClass("Tool")
-							and char:FindFirstChildOfClass("Tool").Name == ITEM_NAME
-							and char:FindFirstChildOfClass("Tool"))
-
-					if item and item.Parent == backpack then
-						humanoid:EquipTool(item)
-						task.wait(0.05)
-					end
-
-					local held = char:FindFirstChildOfClass("Tool")
-					if held and held.Name == ITEM_NAME then
-						ToolAction:FireServer("Mix", SleepingBeautyBottle, 0)
-					end
-				end
-				task.wait(0.05)
-			end
-		end)
-	end,
-})
-
-tab:CreateToggle({
-	name = "Auto Place Only",
-	value = false,
-	callback = function(state)
-		getgenv().AutoPlaceOnly = state
-		if not state then return end
-
-		task.spawn(function()
-			local Players = game:GetService("Players")
-			local ReplicatedStorage = game:GetService("ReplicatedStorage")
-			local player = Players.LocalPlayer
-			local PlaceTool = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlaceTool")
-
-			local goodRotation = CFrame.new(
-				0, 0, 0,
-				-0.9999921321868896, -0.002560368739068508, 0.003036483423784375,
-				0, 0.7644979357719421, 0.6446262001991272,
-				-0.003971865866333246, 0.6446211338043213, -0.7644919157028198
-			)
-
-			local MAX_DISTANCE = 20
-			local PLACEMENTS_PER_TABLE = 12
-			local index, placeCount = 1, 0
-			local nearbyTables = {}
-
-			local function updateNearbyTables()
-				nearbyTables = {}
-				local char = player.Character
-				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if not root then return end
-				local map = workspace:FindFirstChild("Map")
-				if not map then return end
-				local seen = {}
-				for _, obj in ipairs(map:GetDescendants()) do
-					if obj.Name == "CanPlaceDrink" then
-						local part = obj:IsA("BasePart") and obj or obj.Parent
-						if part and part:IsA("BasePart") and not seen[part] then
-							if (part.Position - root.Position).Magnitude <= MAX_DISTANCE then
-								seen[part] = true
-								table.insert(nearbyTables, part)
-							end
-						end
-					end
-				end
-			end
-
-			task.spawn(function()
-				while getgenv().AutoPlaceOnly do
-					updateNearbyTables()
-					task.wait(1)
-				end
-			end)
-
-			local function getRandomPositionOnPart(part)
-				local size, cf = part.Size, part.CFrame
-				local offsetX = (math.random() - 0.5) * (size.X * 0.75)
-				local offsetZ = (math.random() - 0.5) * (size.Z * 0.75)
-				local offsetY = size.Y / 2 + 0.08
-				return (cf * CFrame.new(offsetX, offsetY, offsetZ)).Position
-			end
-
-			while getgenv().AutoPlaceOnly do
-				local char = player.Character
-				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-				local backpack = player:FindFirstChild("Backpack")
-
-				if char and humanoid then
-					local tool = char:FindFirstChild("Sleeping Beauty")
-					if not tool and backpack then
-						local sleeping = backpack:FindFirstChild("Sleeping Beauty")
-						if sleeping then
-							humanoid:EquipTool(sleeping)
-							task.wait(0.06)
-						end
-					end
-					tool = char:FindFirstChild("Sleeping Beauty")
-
-					if tool and #nearbyTables > 0 then
-						if index > #nearbyTables then index = 1 end
-						local target = nearbyTables[index]
-						if target and target.Parent then
-							local placeCF = CFrame.new(getRandomPositionOnPart(target)) * goodRotation
-							PlaceTool:FireServer(placeCF)
-							placeCount += 1
-						end
-						if placeCount >= PLACEMENTS_PER_TABLE then
-							placeCount = 0
-							index += 1
+					for _, tool in ipairs(character:GetChildren()) do
+						if tool:IsA("Tool") then
+							tool.Parent = backpack
 						end
 					end
 				end
@@ -856,7 +810,7 @@ end
 Drinks:CreateDivider({ text = "Pure" })
 Drinks:CreateText({
 	name = "Pure info",
-	text = "One bottle only into the glass type selected above.",
+	text = "One bottle into the selected glass.",
 	starrable = false,
 })
 
@@ -919,7 +873,7 @@ end
 Drinks:CreateDivider({ text = "Custom" })
 Drinks:CreateText({
 	name = "Custom info",
-	text = "Open the in-game custom drink list, Refresh, pick one, Make.",
+	text = "Refresh list, pick a drink, Make.",
 	starrable = false,
 })
 
@@ -1032,7 +986,7 @@ Drinks:CreateButton({
 Games:CreateDivider({ text = "Piano" })
 Games:CreateText({
 	name = "Read this first",
-	text = "Paste VP sheet into PianoUI SheetBox. Each group = one beat; newlines are not pauses. Start again to stop.",
+	text = "Paste a sheet into the PianoUI box, then Start. Start again to stop.",
 })
 
 local PianoState = {
@@ -1234,7 +1188,7 @@ Games:CreateButton({
 Games:CreateDivider({ text = "Music Room" })
 Games:CreateText({
 	name = "Music Room info",
-	text = "Start while HUD is open. Holds release when Tail hits the line so notes right after still register.",
+	text = "Turn on while the music HUD is open. Auto-hits notes and holds.",
 })
 
 local MusicState = {
@@ -1539,7 +1493,7 @@ Games:CreateButton({
 Games:CreateDivider({ text = "Pool" })
 Games:CreateText({
 	name = "Pool info",
-	text = "Enhance stretches aim lines (not the cue-ball segment) toward pockets. Rainbow is separate and skips red (255,50,50).",
+	text = "Enhance aim lines. Rainbow colors lines (skips danger red).",
 })
 
 local PoolState = {
@@ -2058,11 +2012,16 @@ Games:CreateToggle({
 	end,
 })
 
-
 ----------------------------------------------------------------
 -- GAMES: Auto Fish + Farm
 ----------------------------------------------------------------
 Games:CreateDivider({ text = "Fishing" })
+
+Games:CreateText({
+	name = "extra know how",
+	text = "Use Remove barriers on World if the farm path is blocked.",
+})
+
 
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -2075,28 +2034,39 @@ local locking = false
 local rebindQueued = false
 local REBIND_WAIT = 1
 local farmDidTp = false
+local CAST_TIMEOUT = 60
 
-local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
-local TP_POS = Vector3.new(102, -1, 470)----------------------------------------------------------------
--- GAMES: Auto Fish + Farm
-----------------------------------------------------------------
-Games:CreateDivider({ text = "Fishing" })
+-- name → { tp = Vector3, cast = Vector3 }
+local FISH_AREAS = {
+	{
+		name = "hidden",
+		tp = Vector3.new(352, 2, -20),
+		cast = Vector3.new(372.07586669921875, -3.6007509231567383, -27.894031524658203),
+	},
+	-- add more:
+	-- { name = "dock", tp = Vector3.new(x,y,z), cast = Vector3.new(x,y,z) },
+}
 
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local selectedAreaName = FISH_AREAS[1].name
 
-local autoFishOn = false
-local farmOn = false
-local farmToken = 0
-local conns = {}
-local locking = false
-local rebindQueued = false
-local REBIND_WAIT = 1
-local farmDidTp = false
+local function getAreaByName(name)
+	for _, a in ipairs(FISH_AREAS) do
+		if a.name == name then return a end
+	end
+	return FISH_AREAS[1]
+end
 
-local CAST_POS = Vector3.new(129.68165588378906, -3.610368251800537, 454.7956848144531)
-local TP_POS = Vector3.new(102, -1, 470)
-local CAST_TIMEOUT = 300
+local function currentArea()
+	return getAreaByName(selectedAreaName)
+end
+
+local function areaNames()
+	local n = {}
+	for _, a in ipairs(FISH_AREAS) do
+		table.insert(n, a.name)
+	end
+	return n
+end
 
 local cur = { main = nil, slider = nil, inner = nil }
 
@@ -2318,10 +2288,11 @@ end
 
 local function tpToSpotOnce()
 	if farmDidTp then return end
+	local area = currentArea()
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		hrp.CFrame = CFrame.new(TP_POS)
+	if hrp and area then
+		hrp.CFrame = CFrame.new(area.tp)
 		farmDidTp = true
 	end
 end
@@ -2330,11 +2301,28 @@ local function castLine()
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	local toolAction = remotes and remotes:FindFirstChild("ToolAction")
 	if not toolAction then return false end
+	local area = currentArea()
+	if not area then return false end
 	return pcall(function()
 		task.wait(0.5)
-		toolAction:FireServer("CastLine", { Position = CAST_POS }, 1)
+		toolAction:FireServer("CastLine", { Position = area.cast }, 1)
 	end)
 end
+
+Games:CreateDropdown({
+	name = "Fish area",
+	multiSelect = false,
+	options = areaNames(),
+	value = selectedAreaName,
+	callback = function(choice)
+		if type(choice) == "string" and getAreaByName(choice) then
+			selectedAreaName = choice
+			-- allow TP again if they switch area while farm is on
+			farmDidTp = false
+			notify("Fish", "Area: " .. choice, 2)
+		end
+	end,
+})
 
 Games:CreateSlider({
 	name = "Rebind wait",
@@ -2344,6 +2332,17 @@ Games:CreateSlider({
 	suffix = "s",
 	callback = function(v)
 		REBIND_WAIT = v
+	end,
+})
+
+Games:CreateSlider({
+	name = "Bite wait",
+	range = { 10, 300 },
+	increment = 5,
+	value = CAST_TIMEOUT,
+	suffix = "s",
+	callback = function(v)
+		CAST_TIMEOUT = v
 	end,
 })
 
@@ -2379,7 +2378,7 @@ Games:CreateToggle({
 		end
 
 		farmDidTp = false
-		notify("Fish", "Farm on")
+		notify("Fish", "Farm on — " .. selectedAreaName)
 		startLockPoll()
 
 		task.spawn(function()
@@ -2390,7 +2389,7 @@ Games:CreateToggle({
 				refreshRod()
 				castLine()
 				local castAt = os.clock()
-				notify("Fish", "CastLine — waiting…", 2)
+				notify("Fish", "CastLine (" .. selectedAreaName .. ") — wait " .. tostring(CAST_TIMEOUT) .. "s…", 2)
 
 				local sawGui = false
 				while farmOn and myToken == farmToken do
@@ -2399,7 +2398,7 @@ Games:CreateToggle({
 						break
 					end
 					if os.clock() - castAt >= CAST_TIMEOUT then
-						notify("Fish", "No bite 5m — recast", 2)
+						notify("Fish", "No bite — recast", 2)
 						break
 					end
 					task.wait(0.2)
@@ -2410,7 +2409,6 @@ Games:CreateToggle({
 					continue
 				end
 
-				-- rebind wait before force lock
 				clearConns()
 				task.wait(REBIND_WAIT)
 				if not farmOn or myToken ~= farmToken then break end
@@ -2599,7 +2597,7 @@ do
 	LookupTab:CreateDivider({ text = "Search" })
 	LookupTab:CreateText({
 		name = "Tip",
-		text = "Partial name → Load. Fills profile and all lists.",
+		text = "Type part of a name, then Load.",
 		starrable = false,
 	})
 	local searchBox = LookupTab:CreateInput({
